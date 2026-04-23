@@ -109,6 +109,7 @@ export const createEnvironment = (scene) => {
       if (child.isMesh) child.geometry.dispose()
     })
     npc6.userData.material.dispose()
+    npc6.userData.dispose?.()
     ground.geometry.dispose()
     ground.material.dispose()
     groundTexture.dispose()

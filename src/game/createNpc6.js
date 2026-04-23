@@ -1,4 +1,5 @@
 import {
+  CanvasTexture,
   CatmullRomCurve3,
   Group,
   Mesh,
@@ -17,8 +18,12 @@ const TUBE_RADIAL_SEGMENTS = 12
 const END_CAP_RADIUS = 0.07
 const HEAD_RADIUS = 0.18
 const BREATH_SPEED = 18.9
-const BREATH_TORSO_AMPLITUDE = 0.002
+// 走路阶段保持重心稳定，避免头部上下位移。
+const BREATH_TORSO_AMPLITUDE = 0
 const BREATH_SHOULDER_AMPLITUDE = 0.001
+const HEAD_EYES_TEXTURE_SIZE = 512
+const HEAD_EYES_FONT_SIZE = 180
+const HEAD_EYES_YAW = -Math.PI / 2
 
 export const NPC6_PROPORTIONS = {
   // 脚底高度，调大/调小会整体改变脚在模型局部坐标里的高度。
@@ -61,15 +66,29 @@ const createSegmentOffset = ({ length, direction }) => (
 )
 
 export const createNpc6JointPositions = (proportions = NPC6_PROPORTIONS) => {
-  // 下面按“从下到上、从身体中心向四肢”的顺序推导关节位置，便于按人体结构调整。
-  const footLeft = new Vector3(-proportions.footHalfWidth, proportions.footY, Z_OFFSET)
-  const footRight = new Vector3(proportions.footHalfWidth, proportions.footY, Z_OFFSET)
-  const kneeLeft = footLeft.clone().add(createSegmentOffset(proportions.lowerLeg.left))
-  const kneeRight = footRight.clone().add(createSegmentOffset(proportions.lowerLeg.right))
-  const hipLeft = kneeLeft.clone().add(createSegmentOffset(proportions.upperLeg.left))
-  const hipRight = kneeRight.clone().add(createSegmentOffset(proportions.upperLeg.right))
-  // 中心胯由左右胯平均得到，腿部方向变化时身体仍保持在两腿之间。
+  const lowerLeft = createSegmentOffset(proportions.lowerLeg.left)
+  const lowerRight = createSegmentOffset(proportions.lowerLeg.right)
+  const upperLeft = createSegmentOffset(proportions.upperLeg.left)
+  const upperRight = createSegmentOffset(proportions.upperLeg.right)
+  // 以躯干为锚点，再向下反解腿部，让脚在摆动阶段可以真正离开地面。
+  const hipY = proportions.footY + (
+    lowerLeft.y + upperLeft.y + lowerRight.y + upperRight.y
+  ) / 2
+  const hipLeft = new Vector3(
+    -proportions.footHalfWidth + lowerLeft.x + upperLeft.x,
+    hipY,
+    Z_OFFSET,
+  )
+  const hipRight = new Vector3(
+    proportions.footHalfWidth + lowerRight.x + upperRight.x,
+    hipY,
+    Z_OFFSET,
+  )
   const hip = hipLeft.clone().add(hipRight).multiplyScalar(0.5)
+  const kneeLeft = hipLeft.clone().sub(upperLeft)
+  const kneeRight = hipRight.clone().sub(upperRight)
+  const footLeft = kneeLeft.clone().sub(lowerLeft)
+  const footRight = kneeRight.clone().sub(lowerRight)
   const neck = hip.clone().add(createSegmentOffset(proportions.torso))
   const head = neck.clone().add(createSegmentOffset(proportions.neck))
   const shoulderLeft = neck.clone().add(createSegmentOffset(proportions.shoulder.left))
@@ -144,7 +163,32 @@ const createEndCap = ({ key, position, material }) => {
   const radius = key === 'head' ? HEAD_RADIUS : END_CAP_RADIUS
   const endCap = new Mesh(new SphereGeometry(radius, 16, 12), material)
   endCap.position.copy(position)
+  if (key === 'head') {
+    // 把贴图中心转到角色正前方，避免眼睛跑到侧面。
+    endCap.rotation.y = HEAD_EYES_YAW
+  }
   return endCap
+}
+
+const createHeadEyesTexture = () => {
+  const canvas = document.createElement('canvas')
+  canvas.width = HEAD_EYES_TEXTURE_SIZE
+  canvas.height = HEAD_EYES_TEXTURE_SIZE
+  const context = canvas.getContext('2d')
+  if (!context) {
+    throw new Error('Unable to create head texture context.')
+  }
+
+  context.fillStyle = '#000000'
+  context.fillRect(0, 0, HEAD_EYES_TEXTURE_SIZE, HEAD_EYES_TEXTURE_SIZE)
+  context.textAlign = 'center'
+  context.textBaseline = 'middle'
+  context.font = `${HEAD_EYES_FONT_SIZE}px "Apple Color Emoji", "Segoe UI Emoji", sans-serif`
+  context.fillText('👀', HEAD_EYES_TEXTURE_SIZE / 2, HEAD_EYES_TEXTURE_SIZE / 2)
+
+  const texture = new CanvasTexture(canvas)
+  texture.needsUpdate = true
+  return texture
 }
 
 const createTubeStickFigure = ({ name, position, joints, tubePaths, endCapKeys }) => {
@@ -158,6 +202,15 @@ const createTubeStickFigure = ({ name, position, joints, tubePaths, endCapKeys }
   })
   const tubes = []
   const endCaps = {}
+  const headEyesTexture = createHeadEyesTexture()
+  const headMaterial = new MeshStandardMaterial({
+    color: '#ffffff',
+    emissive: '#000000',
+    emissiveIntensity: 0,
+    metalness: 0.85,
+    roughness: 0.28,
+    map: headEyesTexture,
+  })
 
   tubePaths.forEach((keys) => {
     const mesh = createTube({ keys, joints, material })
@@ -166,7 +219,11 @@ const createTubeStickFigure = ({ name, position, joints, tubePaths, endCapKeys }
   })
 
   endCapKeys.forEach((key) => {
-    const endCap = createEndCap({ key, position: joints[key], material })
+    const endCap = createEndCap({
+      key,
+      position: joints[key],
+      material: key === 'head' ? headMaterial : material,
+    })
     endCaps[key] = endCap
     figure.add(endCap)
   })
@@ -176,6 +233,8 @@ const createTubeStickFigure = ({ name, position, joints, tubePaths, endCapKeys }
   figure.userData.material = material
   figure.userData.tubes = tubes
   figure.userData.endCaps = endCaps
+  figure.userData.headEyesTexture = headEyesTexture
+  figure.userData.headMaterial = headMaterial
 
   return figure
 }
@@ -208,10 +267,11 @@ const attachNpc6Breathing = ({ figure, proportions }) => {
   figure.userData.update = (delta) => {
     elapsed += delta
 
-    const joints = createNpc6JointPositions(createBreathingProportions({
+    const animatedProportions = createBreathingProportions({
       baseProportions: proportions,
       elapsed,
-    }))
+    })
+    const joints = createNpc6JointPositions(animatedProportions)
     syncTubeStickFigurePose({ figure, joints })
   }
 }
@@ -229,6 +289,11 @@ export const createNpc6 = ({
     endCapKeys: NPC6_END_CAP_KEYS,
   })
   attachNpc6Breathing({ figure, proportions })
+
+  figure.userData.dispose = () => {
+    figure.userData.headEyesTexture?.dispose()
+    figure.userData.headMaterial?.dispose()
+  }
 
   return figure
 }
