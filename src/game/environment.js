@@ -14,7 +14,13 @@ import {
   WORLD_TUNING,
 } from '../config.js'
 import { createGroundTexture } from './createGroundTexture.js'
-import { createStarField } from './createStarField.js'
+import { createNpc1 } from './createNpc1.js'
+import { createNpc2 } from './createNpc2.js'
+import { createNpc3 } from './createNpc3.js'
+import { createNpc4 } from './createNpc4.js'
+import { createNpc5 } from './createNpc5.js'
+import { createNpc6 } from './createNpc6.js'
+import { createPolaris, createStarField } from './createStarField.js'
 
 export const createEnvironment = (scene) => {
   scene.background = new Color(WORLD_COLORS.sky)
@@ -42,7 +48,32 @@ export const createEnvironment = (scene) => {
   scene.add(moonLight)
 
   const starField = createStarField()
-  scene.add(starField)
+  const polaris = createPolaris()
+  const npc1 = createNpc1({
+    name: 'npc1',
+    position: [2.5, 2.15 / 2, -4],
+  })
+  const npc2 = createNpc2({
+    name: 'npc2',
+    position: [4.3, 2.15 / 2, -4],
+  })
+  const npc3 = createNpc3({
+    name: 'npc3',
+    position: [5.9, 2.15 / 2, -4],
+  })
+  const npc4 = createNpc4({
+    name: 'npc4',
+    position: [7.5, 2.15 / 2, -4],
+  })
+  const npc5 = createNpc5({
+    name: 'npc5',
+    position: [9.1, 2.15 / 2, -4],
+  })
+  const npc6 = createNpc6({
+    name: 'npc6',
+    position: [10.7, 2.15 / 2, -4],
+  })
+  scene.add(starField, polaris, npc1, npc2, npc3, npc4, npc5, npc6)
 
   const groundTexture = createGroundTexture()
   const ground = new Mesh(
@@ -60,6 +91,16 @@ export const createEnvironment = (scene) => {
 
   let lastGroundCellX = Number.NaN
   let lastGroundCellZ = Number.NaN
+  let polarisTwinkleTime = 0
+
+  const update = (delta) => {
+    polarisTwinkleTime += delta * WORLD_TUNING.polarisTwinkleSpeed
+    const twinkle = (Math.sin(polarisTwinkleTime) + 1) / 2
+    polaris.material.opacity = (
+      WORLD_TUNING.polarisMinOpacity
+      + twinkle * (WORLD_TUNING.polarisMaxOpacity - WORLD_TUNING.polarisMinOpacity)
+    )
+  }
 
   const updateGroundPosition = (cameraPosition) => {
     const nextCellX = Math.round(cameraPosition.x / GROUND_REPOSITION_STEP)
@@ -74,16 +115,56 @@ export const createEnvironment = (scene) => {
   }
 
   const dispose = () => {
-    scene.remove(ambientLight, moonLight, starField, ground)
+    scene.remove(
+      ambientLight,
+      moonLight,
+      starField,
+      polaris,
+      npc1,
+      npc2,
+      npc3,
+      npc4,
+      npc5,
+      npc6,
+      ground,
+    )
     starField.geometry.dispose()
     starField.userData.spriteTexture?.dispose()
     starField.material.dispose()
+    polaris.geometry.dispose()
+    polaris.userData.spriteTexture?.dispose()
+    polaris.material.dispose()
+    npc1.traverse((child) => {
+      if (child.isMesh) child.geometry.dispose()
+    })
+    npc1.userData.material.dispose()
+    npc2.traverse((child) => {
+      if (child.isMesh) child.geometry.dispose()
+    })
+    npc2.userData.material.dispose()
+    npc3.traverse((child) => {
+      if (child.isMesh) child.geometry.dispose()
+    })
+    npc3.userData.material.dispose()
+    npc4.traverse((child) => {
+      if (child.isMesh) child.geometry.dispose()
+    })
+    npc4.userData.material.dispose()
+    npc5.traverse((child) => {
+      if (child.isMesh) child.geometry.dispose()
+    })
+    npc5.userData.material.dispose()
+    npc6.traverse((child) => {
+      if (child.isMesh) child.geometry.dispose()
+    })
+    npc6.userData.material.dispose()
     ground.geometry.dispose()
     ground.material.dispose()
     groundTexture.dispose()
   }
 
   return {
+    update,
     updateGroundPosition,
     dispose,
   }

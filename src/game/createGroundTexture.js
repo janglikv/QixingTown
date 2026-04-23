@@ -6,10 +6,10 @@ export const createGroundTexture = () => {
   canvas.height = 512
 
   const context = canvas.getContext('2d')
-  context.fillStyle = '#102019'
+  context.fillStyle = '#07111f'
   context.fillRect(0, 0, canvas.width, canvas.height)
 
-  context.strokeStyle = '#315746'
+  context.strokeStyle = '#245f96'
   context.lineWidth = 2.5
 
   for (let offset = 0; offset <= canvas.width; offset += 32) {
@@ -24,7 +24,7 @@ export const createGroundTexture = () => {
     context.stroke()
   }
 
-  context.strokeStyle = '#7cb798'
+  context.strokeStyle = '#5cb8ff'
   context.lineWidth = 4
 
   for (let offset = 0; offset <= canvas.width; offset += 128) {

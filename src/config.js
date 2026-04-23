@@ -5,8 +5,8 @@ export const GROUND_REPOSITION_STEP = 40
 export const STAR_COUNT = 420
 
 export const WORLD_COLORS = {
-  sky: '#102019',
-  fog: '#08120f',
+  sky: '#07111f',
+  fog: '#050912',
   ambientLight: '#edf6ee',
   moonLight: '#d7e4ea',
   ground: '#142a20',
@@ -24,5 +24,9 @@ export const WORLD_TUNING = {
   starOpacity: 0.9,
   starSphereRadius: 180,
   starMinAltitude: 0.18,
+  polarisSize: 2.4,
+  polarisMinOpacity: 0.65,
+  polarisMaxOpacity: 1,
+  polarisTwinkleSpeed: 2.4,
   maxPixelRatio: 2,
 }
