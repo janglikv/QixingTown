@@ -1,5 +1,4 @@
 import {
-  AnimationClip,
   AnimationMixer,
   Bone,
   CanvasTexture,
@@ -7,11 +6,11 @@ import {
   Group,
   Mesh,
   MeshStandardMaterial,
-  NumberKeyframeTrack,
   SphereGeometry,
   TubeGeometry,
   Vector3,
 } from 'three'
+import { createNpc6AnimationClips } from './npc6Animations.js'
 import {
   STICK_NPC_HEIGHT,
   Z_OFFSET,
@@ -25,7 +24,6 @@ const CONTROL_POINT_RADIUS = 0.04
 const HEAD_EYES_TEXTURE_SIZE = 512
 const HEAD_EYES_FONT_SIZE = 180
 const HEAD_EYES_YAW = -Math.PI / 2
-const SQUAT_CLIP_DURATION = 1.4
 
 export const NPC6_PROPORTIONS = {
   // 脚底高度，调大/调小会整体改变脚在模型局部坐标里的高度。
@@ -212,36 +210,21 @@ const readSkeletonJointPositions = ({ figure, bones }) => {
   return joints
 }
 
-const getFootCenter = (joints) => (
-  joints.footLeft.clone().add(joints.footRight).multiplyScalar(0.5)
-)
-
 const lockNpc6Feet = ({ figure }) => {
   const joints = readSkeletonJointPositions({
     figure,
     bones: figure.userData.bones,
   })
-  const offset = figure.userData.plantedFootCenter.clone().sub(getFootCenter(joints))
+  const lockedFeet = Object.entries(figure.userData.footLocks)
+    .filter(([, footLock]) => footLock.enabled)
+  if (lockedFeet.length === 0) return
 
-  // hip 是骨架根节点；用脚中心反推根节点位置，避免支撑脚被关键帧带着滑动。
+  const offset = lockedFeet
+    .reduce((sum, [key, footLock]) => sum.add(footLock.target.clone().sub(joints[key])), new Vector3())
+    .multiplyScalar(1 / lockedFeet.length)
+
+  // hip 是骨架根节点；用已锁定脚的平均偏移反推根节点位置，避免支撑脚被关键帧带着滑动。
   figure.userData.skeletonRoot.position.add(offset)
-}
-
-const createNpc6SquatClip = (joints) => {
-  const times = [0, SQUAT_CLIP_DURATION / 2, SQUAT_CLIP_DURATION]
-  const neckOffset = joints.neck.clone().sub(joints.hip)
-
-  return new AnimationClip('npc6-squat-stand', SQUAT_CLIP_DURATION, [
-    // neck 是躯干顶点；移动它而不是旋转它，才能真正让 hip->neck 这段躯干前倾。
-    new NumberKeyframeTrack('neck.position[y]', times, [neckOffset.y, neckOffset.y - 0.16, neckOffset.y]),
-    new NumberKeyframeTrack('neck.position[z]', times, [neckOffset.z, neckOffset.z + 0.46, neckOffset.z]),
-    new NumberKeyframeTrack('hipLeft.rotation[x]', times, [0, -1.3, 0]),
-    new NumberKeyframeTrack('kneeLeft.rotation[x]', times, [0, 1.85, 0]),
-    new NumberKeyframeTrack('hipRight.rotation[x]', times, [0, -1.3, 0]),
-    new NumberKeyframeTrack('kneeRight.rotation[x]', times, [0, 1.85, 0]),
-    new NumberKeyframeTrack('shoulderLeft.rotation[z]', times, [0, 0.18, 0]),
-    new NumberKeyframeTrack('shoulderRight.rotation[z]', times, [0, -0.18, 0]),
-  ])
 }
 
 const createTubeGeometry = ({ keys, joints }) => {
@@ -422,16 +405,33 @@ export const createNpc6 = ({
     endCapKeys: NPC6_END_CAP_KEYS,
   })
   figure.add(skeleton.root)
-  const squatClip = createNpc6SquatClip(joints)
+  const animationClips = createNpc6AnimationClips(joints)
   figure.userData.proportions = proportions
   figure.userData.mixer = new AnimationMixer(figure)
-  figure.userData.squatAction = figure.userData.mixer.clipAction(squatClip)
-  figure.userData.squatAction.play()
   figure.userData.skeletonRoot = skeleton.root
   figure.userData.bones = skeleton.bones
-  figure.userData.plantedFootCenter = getFootCenter(joints)
-  figure.userData.animations = {
-    squat: squatClip,
+  figure.userData.footLocks = {
+    footLeft: { enabled: true, target: joints.footLeft.clone() },
+    footRight: { enabled: true, target: joints.footRight.clone() },
+  }
+  figure.userData.animations = animationClips
+  figure.userData.actions = Object.fromEntries(
+    Object.entries(animationClips).map(([key, clip]) => [
+      key,
+      figure.userData.mixer.clipAction(clip),
+    ]),
+  )
+  figure.userData.playAction = (key) => {
+    const action = figure.userData.actions[key]
+    if (!action) {
+      throw new Error(`Unknown NPC6 action: ${key}`)
+    }
+
+    action.reset().play()
+    return action
+  }
+  figure.userData.stopAction = (key) => {
+    figure.userData.actions[key]?.stop()
   }
   figure.userData.syncPose = () => {
     syncTubeStickFigurePose({
@@ -443,6 +443,7 @@ export const createNpc6 = ({
     })
   }
   attachNpc6SkeletonSync({ figure })
+  figure.userData.playAction('squat')
 
   figure.userData.dispose = () => {
     figure.userData.mixer.stopAllAction()
