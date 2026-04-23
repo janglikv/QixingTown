@@ -16,11 +16,9 @@ const TUBE_RADIUS = 0.045
 const TUBE_RADIAL_SEGMENTS = 12
 const END_CAP_RADIUS = 0.07
 const HEAD_RADIUS = 0.18
-const BREATH_SPEED = 2.2
-const BREATH_TORSO_AMPLITUDE = 0.025
-const BREATH_SHOULDER_AMPLITUDE = 0.01
-const BREATH_SWAY_AMPLITUDE = 0.018
-const BREATH_JITTER_AMPLITUDE = 0.006
+const BREATH_SPEED = 18.9
+const BREATH_TORSO_AMPLITUDE = 0.002
+const BREATH_SHOULDER_AMPLITUDE = 0.001
 
 export const NPC6_PROPORTIONS = {
   footY: -1,
@@ -173,20 +171,13 @@ const createTubeStickFigure = ({ name, position, joints, tubePaths, endCapKeys }
 }
 
 const createBreathingProportions = ({ baseProportions, elapsed }) => {
-  const breath = (Math.sin(elapsed * BREATH_SPEED) + 1) / 2
-  const jitter = Math.sin(elapsed * BREATH_SPEED * 7.5) * BREATH_JITTER_AMPLITUDE
-  const sway = Math.sin(elapsed * BREATH_SPEED * 0.7) * BREATH_SWAY_AMPLITUDE + jitter
+  const breath = Math.sin(elapsed * BREATH_SPEED)
 
   return {
     ...baseProportions,
     torso: {
       ...baseProportions.torso,
       length: baseProportions.torso.length + breath * BREATH_TORSO_AMPLITUDE,
-      direction: new Vector3(sway, 1, 0),
-    },
-    neck: {
-      ...baseProportions.neck,
-      direction: new Vector3(-sway * 0.4, 1, 0),
     },
     shoulder: {
       left: {
