@@ -21,29 +21,38 @@ const BREATH_TORSO_AMPLITUDE = 0.002
 const BREATH_SHOULDER_AMPLITUDE = 0.001
 
 export const NPC6_PROPORTIONS = {
+  // 脚底高度，调大/调小会整体改变脚在模型局部坐标里的高度。
   footY: -1,
+  // 双脚离身体中线的半宽度，越大站姿越宽。
   footHalfWidth: 0.22,
+  // 小腿：从脚 foot 到膝盖 knee，direction 的 x 控制左右偏移，y 控制向上高度。
   lowerLeg: {
     left: { length: Math.hypot(0.04, 0.62), direction: new Vector3(0.04, 0.62, 0) },
     right: { length: Math.hypot(0.04, 0.62), direction: new Vector3(-0.04, 0.62, 0) },
   },
+  // 大腿：从膝盖 knee 到左右胯 hipLeft/hipRight。
   upperLeg: {
-    left: { length: Math.hypot(0.08, 0.34), direction: new Vector3(0.08, 0.34, 0) },
-    right: { length: Math.hypot(0.08, 0.34), direction: new Vector3(-0.08, 0.34, 0) },
+    left: { length: Math.hypot(0.38, 0.34), direction: new Vector3(0.08, 0.34, 0) },
+    right: { length: Math.hypot(0.38, 0.34), direction: new Vector3(-0.08, 0.34, 0) },
   },
+  // 躯干：从中心胯 hip 到脖子 neck。
   torso: { length: 0.52, direction: new Vector3(0, 1, 0) },
+  // 颈部/头部高度：从脖子 neck 到头部中心 head。
   neck: { length: 0.38, direction: new Vector3(0, 1, 0) },
+  // 肩宽：从脖子 neck 分别延伸到左右肩 shoulderLeft/shoulderRight。
   shoulder: {
-    left: { length: 0.12, direction: new Vector3(-1, 0, 0) },
-    right: { length: 0.12, direction: new Vector3(1, 0, 0) },
+    left: { length: 0.14, direction: new Vector3(-1, 0, 0) },
+    right: { length: 0.14, direction: new Vector3(1, 0, 0) },
   },
+  // 上臂：从肩 shoulder 到手肘 elbow。y 为负表示手臂向下垂。
   upperArm: {
-    left: { length: Math.hypot(0.24, 0.1), direction: new Vector3(-0.24, -0.1, 0) },
-    right: { length: Math.hypot(0.24, 0.1), direction: new Vector3(0.24, -0.1, 0) },
+    left: { length: Math.hypot(0.1, 0.34), direction: new Vector3(-0.1, -0.34, 0) },
+    right: { length: Math.hypot(0.1, 0.34), direction: new Vector3(0.1, -0.34, 0) },
   },
+  // 前臂：从手肘 elbow 到手 hand。x 越大，手离身体越远。
   lowerArm: {
-    left: { length: Math.hypot(0.32, 0.02), direction: new Vector3(-0.32, -0.02, 0) },
-    right: { length: Math.hypot(0.32, 0.02), direction: new Vector3(0.32, -0.02, 0) },
+    left: { length: Math.hypot(0.04, 0.32), direction: new Vector3(-0.04, -0.32, 0) },
+    right: { length: Math.hypot(0.04, 0.32), direction: new Vector3(0.04, -0.32, 0) },
   },
 }
 
@@ -52,6 +61,7 @@ const createSegmentOffset = ({ length, direction }) => (
 )
 
 export const createNpc6JointPositions = (proportions = NPC6_PROPORTIONS) => {
+  // 下面按“从下到上、从身体中心向四肢”的顺序推导关节位置，便于按人体结构调整。
   const footLeft = new Vector3(-proportions.footHalfWidth, proportions.footY, Z_OFFSET)
   const footRight = new Vector3(proportions.footHalfWidth, proportions.footY, Z_OFFSET)
   const kneeLeft = footLeft.clone().add(createSegmentOffset(proportions.lowerLeg.left))
