@@ -77,11 +77,11 @@ const createEndCap = ({ key, position, material }) => {
 const createTubeStickFigure = ({ name, position, joints, tubePaths, endCapKeys }) => {
   const figure = new Group()
   const material = new MeshStandardMaterial({
-    color: '#1d2226',
-    emissive: '#040506',
-    emissiveIntensity: 0.18,
-    metalness: 0,
-    roughness: 0.42,
+    color: '#000000',
+    emissive: '#000000',
+    emissiveIntensity: 0,
+    metalness: 0.85,
+    roughness: 0.28,
   })
 
   tubePaths.forEach((keys) => {
