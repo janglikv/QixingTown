@@ -7,7 +7,6 @@ import {
   TubeGeometry,
   Vector3,
 } from 'three'
-import { solveControlGraph } from './controlGraph.js'
 import {
   STICK_NPC_HEIGHT,
   Z_OFFSET,
@@ -17,27 +16,79 @@ const TUBE_RADIUS = 0.045
 const TUBE_RADIAL_SEGMENTS = 12
 const END_CAP_RADIUS = 0.07
 const HEAD_RADIUS = 0.18
+const BREATH_SPEED = 2.2
+const BREATH_TORSO_AMPLITUDE = 0.025
+const BREATH_SHOULDER_AMPLITUDE = 0.01
+const BREATH_SWAY_AMPLITUDE = 0.018
+const BREATH_JITTER_AMPLITUDE = 0.006
 
-const CONTROL_POINTS = {
-  footLeft: new Vector3(-0.22, -1, Z_OFFSET),
-  footRight: new Vector3(0.22, -1, Z_OFFSET),
+export const NPC6_PROPORTIONS = {
+  footY: -1,
+  footHalfWidth: 0.22,
+  lowerLeg: {
+    left: { length: Math.hypot(0.04, 0.62), direction: new Vector3(0.04, 0.62, 0) },
+    right: { length: Math.hypot(0.04, 0.62), direction: new Vector3(-0.04, 0.62, 0) },
+  },
+  upperLeg: {
+    left: { length: Math.hypot(0.08, 0.34), direction: new Vector3(0.08, 0.34, 0) },
+    right: { length: Math.hypot(0.08, 0.34), direction: new Vector3(-0.08, 0.34, 0) },
+  },
+  torso: { length: 0.52, direction: new Vector3(0, 1, 0) },
+  neck: { length: 0.38, direction: new Vector3(0, 1, 0) },
+  shoulder: {
+    left: { length: 0.12, direction: new Vector3(-1, 0, 0) },
+    right: { length: 0.12, direction: new Vector3(1, 0, 0) },
+  },
+  upperArm: {
+    left: { length: Math.hypot(0.24, 0.1), direction: new Vector3(-0.24, -0.1, 0) },
+    right: { length: Math.hypot(0.24, 0.1), direction: new Vector3(0.24, -0.1, 0) },
+  },
+  lowerArm: {
+    left: { length: Math.hypot(0.32, 0.02), direction: new Vector3(-0.32, -0.02, 0) },
+    right: { length: Math.hypot(0.32, 0.02), direction: new Vector3(0.32, -0.02, 0) },
+  },
 }
 
-const CONTROL_CONSTRAINTS = [
-  { type: 'offset', from: 'footLeft', to: 'kneeLeft', offset: new Vector3(0.04, 0.62, 0) }, // 左脚推导左膝。
-  { type: 'offset', from: 'kneeLeft', to: 'hipLeft', offset: new Vector3(0.08, 0.34, 0) }, // 左膝推导左胯。
-  { type: 'offset', from: 'footRight', to: 'kneeRight', offset: new Vector3(-0.04, 0.62, 0) }, // 右脚推导右膝。
-  { type: 'offset', from: 'kneeRight', to: 'hipRight', offset: new Vector3(-0.08, 0.34, 0) }, // 右膝推导右胯。
-  { type: 'offset', from: 'footLeft', to: 'hip', offset: new Vector3(0.22, 0.96, 0) }, // 用左脚固定点推导中心胯。
-  { type: 'offset', from: 'hip', to: 'neck', offset: new Vector3(0, 0.52, 0) }, // 中心胯推导脖子。
-  { type: 'offset', from: 'neck', to: 'head', offset: new Vector3(0, 0.38, 0) }, // 脖子推导头部。
-  { type: 'offset', from: 'neck', to: 'shoulderLeft', offset: new Vector3(-0.12, -0.0, 0) }, // 脖子推导左肩。
-  { type: 'offset', from: 'neck', to: 'shoulderRight', offset: new Vector3(0.12, -0.0, 0) }, // 脖子推导右肩。
-  { type: 'offset', from: 'shoulderLeft', to: 'elbowLeft', offset: new Vector3(-0.24, -0.1, 0) }, // 左肩推导左肘。
-  { type: 'offset', from: 'elbowLeft', to: 'handLeft', offset: new Vector3(-0.32, -0.02, 0) }, // 左肘推导左手。
-  { type: 'offset', from: 'shoulderRight', to: 'elbowRight', offset: new Vector3(0.24, -0.1, 0) }, // 右肩推导右肘。
-  { type: 'offset', from: 'elbowRight', to: 'handRight', offset: new Vector3(0.32, -0.02, 0) }, // 右肘推导右手。
-]
+const createSegmentOffset = ({ length, direction }) => (
+  direction.clone().normalize().multiplyScalar(length)
+)
+
+export const createNpc6JointPositions = (proportions = NPC6_PROPORTIONS) => {
+  const footLeft = new Vector3(-proportions.footHalfWidth, proportions.footY, Z_OFFSET)
+  const footRight = new Vector3(proportions.footHalfWidth, proportions.footY, Z_OFFSET)
+  const kneeLeft = footLeft.clone().add(createSegmentOffset(proportions.lowerLeg.left))
+  const kneeRight = footRight.clone().add(createSegmentOffset(proportions.lowerLeg.right))
+  const hipLeft = kneeLeft.clone().add(createSegmentOffset(proportions.upperLeg.left))
+  const hipRight = kneeRight.clone().add(createSegmentOffset(proportions.upperLeg.right))
+  // 中心胯由左右胯平均得到，腿部方向变化时身体仍保持在两腿之间。
+  const hip = hipLeft.clone().add(hipRight).multiplyScalar(0.5)
+  const neck = hip.clone().add(createSegmentOffset(proportions.torso))
+  const head = neck.clone().add(createSegmentOffset(proportions.neck))
+  const shoulderLeft = neck.clone().add(createSegmentOffset(proportions.shoulder.left))
+  const shoulderRight = neck.clone().add(createSegmentOffset(proportions.shoulder.right))
+  const elbowLeft = shoulderLeft.clone().add(createSegmentOffset(proportions.upperArm.left))
+  const elbowRight = shoulderRight.clone().add(createSegmentOffset(proportions.upperArm.right))
+  const handLeft = elbowLeft.clone().add(createSegmentOffset(proportions.lowerArm.left))
+  const handRight = elbowRight.clone().add(createSegmentOffset(proportions.lowerArm.right))
+
+  return {
+    footLeft,
+    footRight,
+    kneeLeft,
+    kneeRight,
+    hipLeft,
+    hipRight,
+    hip,
+    neck,
+    head,
+    shoulderLeft,
+    shoulderRight,
+    elbowLeft,
+    elbowRight,
+    handLeft,
+    handRight,
+  }
+}
 
 const NPC6_TUBE_PATHS = [
   ['footLeft', 'kneeLeft', 'hipLeft', 'hip', 'hipRight', 'kneeRight', 'footRight'],
@@ -53,18 +104,32 @@ const NPC6_END_CAP_KEYS = [
   'footRight',
 ]
 
-const createTube = ({ keys, joints, material }) => {
+const createTubeGeometry = ({ keys, joints }) => {
   const points = keys.map((key) => joints[key])
   const curve = new CatmullRomCurve3(points, false, 'centripetal')
-  const geometry = new TubeGeometry(
+
+  return new TubeGeometry(
     curve,
     (points.length - 1) * 18,
     TUBE_RADIUS,
     TUBE_RADIAL_SEGMENTS,
     false,
   )
+}
 
-  return new Mesh(geometry, material)
+const createTube = ({ keys, joints, material }) => (
+  new Mesh(createTubeGeometry({ keys, joints }), material)
+)
+
+const syncTubeStickFigurePose = ({ figure, joints }) => {
+  figure.userData.tubes.forEach(({ mesh, keys }) => {
+    mesh.geometry.dispose()
+    mesh.geometry = createTubeGeometry({ keys, joints })
+  })
+
+  Object.entries(figure.userData.endCaps).forEach(([key, endCap]) => {
+    endCap.position.copy(joints[key])
+  })
 }
 
 const createEndCap = ({ key, position, material }) => {
@@ -83,34 +148,86 @@ const createTubeStickFigure = ({ name, position, joints, tubePaths, endCapKeys }
     metalness: 0.85,
     roughness: 0.28,
   })
+  const tubes = []
+  const endCaps = {}
 
   tubePaths.forEach((keys) => {
-    figure.add(createTube({ keys, joints, material }))
+    const mesh = createTube({ keys, joints, material })
+    tubes.push({ mesh, keys })
+    figure.add(mesh)
   })
 
   endCapKeys.forEach((key) => {
-    figure.add(createEndCap({ key, position: joints[key], material }))
+    const endCap = createEndCap({ key, position: joints[key], material })
+    endCaps[key] = endCap
+    figure.add(endCap)
   })
 
   figure.name = name
   figure.position.set(...position)
   figure.userData.material = material
+  figure.userData.tubes = tubes
+  figure.userData.endCaps = endCaps
 
   return figure
+}
+
+const createBreathingProportions = ({ baseProportions, elapsed }) => {
+  const breath = (Math.sin(elapsed * BREATH_SPEED) + 1) / 2
+  const jitter = Math.sin(elapsed * BREATH_SPEED * 7.5) * BREATH_JITTER_AMPLITUDE
+  const sway = Math.sin(elapsed * BREATH_SPEED * 0.7) * BREATH_SWAY_AMPLITUDE + jitter
+
+  return {
+    ...baseProportions,
+    torso: {
+      ...baseProportions.torso,
+      length: baseProportions.torso.length + breath * BREATH_TORSO_AMPLITUDE,
+      direction: new Vector3(sway, 1, 0),
+    },
+    neck: {
+      ...baseProportions.neck,
+      direction: new Vector3(-sway * 0.4, 1, 0),
+    },
+    shoulder: {
+      left: {
+        ...baseProportions.shoulder.left,
+        length: baseProportions.shoulder.left.length + breath * BREATH_SHOULDER_AMPLITUDE,
+      },
+      right: {
+        ...baseProportions.shoulder.right,
+        length: baseProportions.shoulder.right.length + breath * BREATH_SHOULDER_AMPLITUDE,
+      },
+    },
+  }
+}
+
+const attachNpc6Breathing = ({ figure, proportions }) => {
+  let elapsed = 0
+
+  figure.userData.update = (delta) => {
+    elapsed += delta
+
+    const joints = createNpc6JointPositions(createBreathingProportions({
+      baseProportions: proportions,
+      elapsed,
+    }))
+    syncTubeStickFigurePose({ figure, joints })
+  }
 }
 
 export const createNpc6 = ({
   name = 'npc6',
   position = [10.7, STICK_NPC_HEIGHT / 2, -4],
-} = {}) => (
-  createTubeStickFigure({
+  proportions = NPC6_PROPORTIONS,
+} = {}) => {
+  const figure = createTubeStickFigure({
     name,
     position,
-    joints: solveControlGraph({
-      points: CONTROL_POINTS,
-      constraints: CONTROL_CONSTRAINTS,
-    }),
+    joints: createNpc6JointPositions(proportions),
     tubePaths: NPC6_TUBE_PATHS,
     endCapKeys: NPC6_END_CAP_KEYS,
   })
-)
+  attachNpc6Breathing({ figure, proportions })
+
+  return figure
+}

@@ -100,6 +100,7 @@ export const createEnvironment = (scene) => {
       WORLD_TUNING.polarisMinOpacity
       + twinkle * (WORLD_TUNING.polarisMaxOpacity - WORLD_TUNING.polarisMinOpacity)
     )
+    npc6.userData.update(delta)
   }
 
   const updateGroundPosition = (cameraPosition) => {
