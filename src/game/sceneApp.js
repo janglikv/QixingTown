@@ -17,6 +17,7 @@ const createRenderer = (app) => {
 
 const CAMERA_STATE_STORAGE_KEY = 'qixing-town:camera-state'
 const CAMERA_STATE_SAVE_INTERVAL = 250
+const CONTROL_POINTS_VISIBLE_STORAGE_KEY = 'qixing-town:control-points-visible'
 
 const isFiniteNumberArray = (value, length) => (
   Array.isArray(value)
@@ -55,6 +56,76 @@ const writeCameraState = (camera) => {
   }
 }
 
+const readControlPointsVisible = () => {
+  try {
+    const value = window.localStorage.getItem(CONTROL_POINTS_VISIBLE_STORAGE_KEY)
+
+    return value === null ? true : value === 'true'
+  } catch {
+    return true
+  }
+}
+
+const writeControlPointsVisible = (visible) => {
+  try {
+    window.localStorage.setItem(CONTROL_POINTS_VISIBLE_STORAGE_KEY, String(visible))
+  } catch {
+    // Storage can be unavailable in restricted browser modes.
+  }
+}
+
+const createControlPointToggle = ({ app, initialVisible, onChange }) => {
+  const label = document.createElement('label')
+  const checkbox = document.createElement('input')
+  const text = document.createElement('span')
+
+  checkbox.type = 'checkbox'
+  checkbox.checked = initialVisible
+  text.textContent = '控制点'
+  Object.assign(label.style, {
+    position: 'absolute',
+    right: '14px',
+    top: '14px',
+    zIndex: '10',
+    display: 'none',
+    alignItems: 'center',
+    gap: '8px',
+    padding: '8px 10px',
+    borderRadius: '6px',
+    background: 'rgba(7, 17, 31, 0.72)',
+    color: '#eef5ee',
+    fontSize: '14px',
+    userSelect: 'none',
+  })
+  checkbox.style.margin = '0'
+  label.append(checkbox, text)
+  app.append(label)
+
+  const stopPointerLock = (event) => {
+    event.stopPropagation()
+  }
+  const handleChange = () => {
+    onChange(checkbox.checked)
+  }
+
+  label.addEventListener('pointerdown', stopPointerLock)
+  label.addEventListener('click', stopPointerLock)
+  checkbox.addEventListener('change', handleChange)
+
+  return {
+    element: label,
+    syncCursorVisible: (visible) => {
+      label.style.display = visible ? 'inline-flex' : 'none'
+    },
+    dispose: () => {
+      label.removeEventListener('pointerdown', stopPointerLock)
+      label.removeEventListener('click', stopPointerLock)
+      checkbox.removeEventListener('change', handleChange)
+      label.remove()
+    },
+  }
+}
+
 const getCameraStateSignature = (camera) => (
   [
     ...camera.position.toArray(),
@@ -87,6 +158,16 @@ export const createSceneApp = (app) => {
   const player = createPlayerController({
     camera,
     domElement: renderer.domElement,
+  })
+  const controlPointsVisible = readControlPointsVisible()
+  environment.setNpc6ControlPointsVisible(controlPointsVisible)
+  const controlPointToggle = createControlPointToggle({
+    app,
+    initialVisible: controlPointsVisible,
+    onChange: (visible) => {
+      environment.setNpc6ControlPointsVisible(visible)
+      writeControlPointsVisible(visible)
+    },
   })
   const actionWheel = createActionWheel({
     scene,
@@ -205,6 +286,7 @@ export const createSceneApp = (app) => {
     const delta = clock.getDelta()
 
     player.update(delta)
+    controlPointToggle.syncCursorVisible(!player.controls.isLocked)
     environment.update(delta)
     actionWheel.update()
     environment.updateGroundPosition(camera.position)
@@ -228,6 +310,7 @@ export const createSceneApp = (app) => {
     window.removeEventListener('keydown', onKeyDown)
     window.removeEventListener('keyup', onKeyUp)
     persistCameraStateOnUnload()
+    controlPointToggle.dispose()
     actionWheel.dispose()
     player.dispose()
     environment.dispose()

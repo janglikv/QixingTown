@@ -132,6 +132,10 @@ export const createEnvironment = (scene) => {
     npc6.userData.setButtTwistAction(enabled)
   }
 
+  const setNpc6ControlPointsVisible = (visible) => {
+    npc6.userData.setControlPointsVisible(visible)
+  }
+
   const setNpc6WaveAction = (side) => {
     const nextAction = npc6State.waveAction === side ? null : side
 
@@ -172,6 +176,7 @@ export const createEnvironment = (scene) => {
     setNpc6SquatPose,
     setNpc6SquatAction,
     setNpc6ButtTwistAction,
+    setNpc6ControlPointsVisible,
     setNpc6WaveAction,
     update,
     updateGroundPosition,

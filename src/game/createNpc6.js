@@ -18,7 +18,7 @@ const TUBE_RADIUS = 0.045
 const TUBE_RADIAL_SEGMENTS = 12
 const END_CAP_RADIUS = 0.07
 const HEAD_RADIUS = 0.18
-const CONTROL_POINT_RADIUS = 0.04
+const CONTROL_POINT_RADIUS = 0.01
 const HEAD_EYES_TEXTURE_SIZE = 512
 const HEAD_EYES_FONT_SIZE = 180
 const HEAD_EYES_YAW = -Math.PI / 2
@@ -321,6 +321,7 @@ const createControlPoints = ({ joints, material }) => {
     )
     controlPoint.name = `${key}ControlPoint`
     controlPoint.position.copy(joints[key])
+    controlPoint.renderOrder = 20
     controlPoints[key] = controlPoint
     group.add(controlPoint)
   })
@@ -375,11 +376,12 @@ const createTubeStickFigure = ({ name, position, joints, tubePaths, endCapKeys }
     map: headEyesTexture,
   })
   const controlPointMaterial = new MeshStandardMaterial({
-    color: '#4de6ff',
-    emissive: '#116d80',
-    emissiveIntensity: 0.45,
+    color: '#ffea4d',
+    emissive: '#ff9f1a',
+    emissiveIntensity: 0.9,
     metalness: 0.1,
     roughness: 0.25,
+    depthTest: false,
   })
 
   tubePaths.forEach((keys) => {
@@ -409,6 +411,7 @@ const createTubeStickFigure = ({ name, position, joints, tubePaths, endCapKeys }
   figure.userData.material = material
   figure.userData.tubes = tubes
   figure.userData.endCaps = endCaps
+  figure.userData.controlPointGroup = controlPointGroup
   figure.userData.controlPoints = controlPoints
   figure.userData.controlPointMaterial = controlPointMaterial
   figure.userData.headEyesTexture = headEyesTexture
@@ -777,6 +780,9 @@ export const createNpc6 = ({
   }
   figure.userData.setButtTwistAction = (enabled) => {
     lowerBody.setButtTwistEnabled(enabled)
+  }
+  figure.userData.setControlPointsVisible = (visible) => {
+    figure.userData.controlPointGroup.visible = visible
   }
   figure.userData.setHoldHeadPose = (enabled) => {
     upperBody.setMode(enabled ? 'holdHead' : 'idle')
