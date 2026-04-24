@@ -15,46 +15,15 @@ const createRenderer = (app) => {
   return renderer
 }
 
-const CAMERA_STATE_STORAGE_KEY = 'qixing-town:camera-state'
-const CAMERA_STATE_SAVE_INTERVAL = 250
 const CONTROL_POINTS_VISIBLE_STORAGE_KEY = 'qixing-town:control-points-visible'
-const PHOTO_MODE_STORAGE_KEY = 'qixing-town:photo-mode'
-
-const isFiniteNumberArray = (value, length) => (
-  Array.isArray(value)
-  && value.length === length
-  && value.every(Number.isFinite)
-)
-
-const readCameraState = () => {
-  try {
-    const state = JSON.parse(window.localStorage.getItem(CAMERA_STATE_STORAGE_KEY))
-
-    if (
-      !isFiniteNumberArray(state?.position, 3)
-      || !isFiniteNumberArray(state?.quaternion, 4)
-    ) {
-      return null
-    }
-
-    return state
-  } catch {
-    return null
-  }
+const VIEW_MODE_STORAGE_KEY = 'qixing-town:view-mode'
+const VIEW_MODES = {
+  fixedView: 'fixed-view',
+  fixedForward: 'fixed-forward',
 }
-
-const writeCameraState = (camera) => {
-  try {
-    window.localStorage.setItem(
-      CAMERA_STATE_STORAGE_KEY,
-      JSON.stringify({
-        position: camera.position.toArray(),
-        quaternion: camera.quaternion.toArray(),
-      }),
-    )
-  } catch {
-    // Storage can be unavailable in restricted browser modes.
-  }
+const VIEW_MODE_LABELS = {
+  [VIEW_MODES.fixedView]: '固定视角',
+  [VIEW_MODES.fixedForward]: '跟随朝向',
 }
 
 const readControlPointsVisible = () => {
@@ -67,27 +36,27 @@ const readControlPointsVisible = () => {
   }
 }
 
-const writeControlPointsVisible = (visible) => {
+const readViewMode = () => {
   try {
-    window.localStorage.setItem(CONTROL_POINTS_VISIBLE_STORAGE_KEY, String(visible))
+    return window.localStorage.getItem(VIEW_MODE_STORAGE_KEY) === VIEW_MODES.fixedView
+      ? VIEW_MODES.fixedView
+      : VIEW_MODES.fixedForward
+  } catch {
+    return VIEW_MODES.fixedForward
+  }
+}
+
+const writeViewMode = (viewMode) => {
+  try {
+    window.localStorage.setItem(VIEW_MODE_STORAGE_KEY, viewMode)
   } catch {
     // Storage can be unavailable in restricted browser modes.
   }
 }
 
-const readPhotoMode = () => {
+const writeControlPointsVisible = (visible) => {
   try {
-    const value = window.localStorage.getItem(PHOTO_MODE_STORAGE_KEY)
-
-    return value === null ? true : value === 'true'
-  } catch {
-    return true
-  }
-}
-
-const writePhotoMode = (enabled) => {
-  try {
-    window.localStorage.setItem(PHOTO_MODE_STORAGE_KEY, String(enabled))
+    window.localStorage.setItem(CONTROL_POINTS_VISIBLE_STORAGE_KEY, String(visible))
   } catch {
     // Storage can be unavailable in restricted browser modes.
   }
@@ -145,22 +114,181 @@ const createTopRightToggle = ({ app, initialChecked, top, labelText, onChange })
   }
 }
 
-const getCameraStateSignature = (camera) => (
-  [
-    ...camera.position.toArray(),
-    ...camera.quaternion.toArray(),
-  ].join('|')
-)
+const createTopRightSelect = ({ app, initialValue, top, labelText, options, onChange }) => {
+  const label = document.createElement('label')
+  const text = document.createElement('span')
+  const select = document.createElement('select')
+
+  text.textContent = labelText
+  Object.assign(label.style, {
+    position: 'absolute',
+    right: '14px',
+    top,
+    zIndex: '10',
+    display: 'none',
+    alignItems: 'center',
+    gap: '8px',
+    padding: '8px 10px',
+    borderRadius: '6px',
+    background: 'rgba(7, 17, 31, 0.72)',
+    color: '#eef5ee',
+    fontSize: '14px',
+    userSelect: 'none',
+  })
+  Object.assign(select.style, {
+    fontSize: '14px',
+  })
+  options.forEach(({ value, label: optionLabel }) => {
+    const option = document.createElement('option')
+    option.value = value
+    option.textContent = optionLabel
+    select.append(option)
+  })
+  select.value = initialValue
+  label.append(text, select)
+  app.append(label)
+
+  const stopPointerLock = (event) => {
+    event.stopPropagation()
+  }
+  const handleChange = () => {
+    onChange(select.value)
+  }
+
+  label.addEventListener('pointerdown', stopPointerLock)
+  label.addEventListener('click', stopPointerLock)
+  select.addEventListener('change', handleChange)
+
+  return {
+    element: label,
+    syncCursorVisible: (visible) => {
+      label.style.display = visible ? 'inline-flex' : 'none'
+    },
+    dispose: () => {
+      label.removeEventListener('pointerdown', stopPointerLock)
+      label.removeEventListener('click', stopPointerLock)
+      select.removeEventListener('change', handleChange)
+      label.remove()
+    },
+  }
+}
+
+const createVirtualPointer = ({ app, isVisible }) => {
+  const pointer = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+  const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs')
+  const bodyGradient = document.createElementNS('http://www.w3.org/2000/svg', 'linearGradient')
+  const bevelGradient = document.createElementNS('http://www.w3.org/2000/svg', 'linearGradient')
+  const shadow = document.createElementNS('http://www.w3.org/2000/svg', 'path')
+  const body = document.createElementNS('http://www.w3.org/2000/svg', 'path')
+  const bevel = document.createElementNS('http://www.w3.org/2000/svg', 'path')
+  const inner = document.createElementNS('http://www.w3.org/2000/svg', 'path')
+  const position = { x: window.innerWidth / 2, y: window.innerHeight / 2 }
+
+  pointer.setAttribute('viewBox', '0 0 22 26')
+  bodyGradient.id = 'virtual-pointer-body'
+  bodyGradient.setAttribute('x1', '5')
+  bodyGradient.setAttribute('y1', '3')
+  bodyGradient.setAttribute('x2', '16')
+  bodyGradient.setAttribute('y2', '18')
+  ;[
+    ['0%', '#f3eddd'],
+    ['48%', '#cfc1a7'],
+    ['100%', '#82715a'],
+  ].forEach(([offset, color]) => {
+    const stop = document.createElementNS('http://www.w3.org/2000/svg', 'stop')
+    stop.setAttribute('offset', offset)
+    stop.setAttribute('stop-color', color)
+    bodyGradient.append(stop)
+  })
+  bevelGradient.id = 'virtual-pointer-bevel'
+  bevelGradient.setAttribute('x1', '10')
+  bevelGradient.setAttribute('y1', '13')
+  bevelGradient.setAttribute('x2', '16')
+  bevelGradient.setAttribute('y2', '21')
+  ;[
+    ['0%', '#d4c29f'],
+    ['100%', '#6d5538'],
+  ].forEach(([offset, color]) => {
+    const stop = document.createElementNS('http://www.w3.org/2000/svg', 'stop')
+    stop.setAttribute('offset', offset)
+    stop.setAttribute('stop-color', color)
+    bevelGradient.append(stop)
+  })
+  defs.append(bodyGradient, bevelGradient)
+
+  shadow.setAttribute('d', 'M5.2 4.1 18.4 16.5 11.4 23.4 5.2 19.1Z')
+  shadow.setAttribute('fill', 'rgba(0, 0, 0, 0.68)')
+  shadow.setAttribute('transform', 'translate(-1.2 1.2)')
+  body.setAttribute('d', 'M5.3 3.2 18 15.4 10.8 22.4 5.3 18.5Z')
+  body.setAttribute('fill', 'url(#virtual-pointer-body)')
+  body.setAttribute('stroke', '#1f211d')
+  body.setAttribute('stroke-width', '1.1')
+  body.setAttribute('stroke-linejoin', 'round')
+  bevel.setAttribute('d', 'M13.1 14.1 18 15.4 10.8 22.4 9.3 17.8Z')
+  bevel.setAttribute('fill', 'url(#virtual-pointer-bevel)')
+  bevel.setAttribute('stroke', '#443a2f')
+  bevel.setAttribute('stroke-width', '0.45')
+  bevel.setAttribute('stroke-linejoin', 'round')
+  inner.setAttribute('d', 'M8.4 10.2 13.1 14.1 9.3 17.8Z')
+  inner.setAttribute('fill', '#242622')
+  inner.setAttribute('stroke', '#94866e')
+  inner.setAttribute('stroke-width', '0.9')
+  inner.setAttribute('stroke-linejoin', 'round')
+  pointer.append(defs, shadow, body, bevel, inner)
+
+  Object.assign(pointer.style, {
+    position: 'absolute',
+    left: '0',
+    top: '0',
+    zIndex: '9',
+    width: '22px',
+    height: '26px',
+    pointerEvents: 'none',
+    display: 'none',
+  })
+  app.append(pointer)
+
+  const syncPosition = () => {
+    pointer.style.transform = `translate(${position.x - 2}px, ${position.y - 2}px)`
+  }
+
+  const handleMouseMove = (event) => {
+    if (!isVisible()) return
+
+    position.x = Math.min(window.innerWidth, Math.max(0, position.x + event.movementX))
+    position.y = Math.min(window.innerHeight, Math.max(0, position.y + event.movementY))
+    syncPosition()
+  }
+
+  const handleResize = () => {
+    position.x = Math.min(window.innerWidth, Math.max(0, position.x))
+    position.y = Math.min(window.innerHeight, Math.max(0, position.y))
+    syncPosition()
+  }
+
+  window.addEventListener('mousemove', handleMouseMove)
+  window.addEventListener('resize', handleResize)
+  syncPosition()
+
+  return {
+    getScreenOffset: () => ({
+      x: (position.x / window.innerWidth - 0.5) * 2,
+      y: (position.y / window.innerHeight - 0.5) * 2,
+    }),
+    syncVisible: () => {
+      pointer.style.display = isVisible() ? 'block' : 'none'
+    },
+    dispose: () => {
+      window.removeEventListener('mousemove', handleMouseMove)
+      window.removeEventListener('resize', handleResize)
+      pointer.remove()
+    },
+  }
+}
 
 const createCamera = () => {
   const camera = new PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 500)
   camera.position.set(0, CAMERA_HEIGHT, 6)
-
-  const savedState = readCameraState()
-  if (savedState) {
-    camera.position.fromArray(savedState.position)
-    camera.quaternion.fromArray(savedState.quaternion)
-  }
 
   return camera
 }
@@ -174,13 +302,14 @@ export const createSceneApp = (app) => {
   const camera = createCamera()
   const renderer = createRenderer(app)
   const environment = createEnvironment(scene)
-  const photoMode = readPhotoMode()
+  let viewMode = readViewMode()
   const player = createPlayerController({
     camera,
     domElement: renderer.domElement,
+    getViewMode: () => viewMode,
     onCharacterMove: environment.moveNpc6,
+    onCharacterTurn: environment.turnNpc6ByPointer,
   })
-  player.setPhotoMode(photoMode)
   const controlPointsVisible = readControlPointsVisible()
   environment.setNpc6ControlPointsVisible(controlPointsVisible)
   const controlPointToggle = createTopRightToggle({
@@ -193,14 +322,18 @@ export const createSceneApp = (app) => {
       writeControlPointsVisible(visible)
     },
   })
-  const photoModeToggle = createTopRightToggle({
+  const viewModeSelect = createTopRightSelect({
     app,
-    initialChecked: photoMode,
-    top: '54px',
-    labelText: '拍照模式',
-    onChange: (enabled) => {
-      player.setPhotoMode(enabled)
-      writePhotoMode(enabled)
+    initialValue: viewMode,
+    top: '58px',
+    labelText: '视角',
+    options: [
+      { value: VIEW_MODES.fixedView, label: VIEW_MODE_LABELS[VIEW_MODES.fixedView] },
+      { value: VIEW_MODES.fixedForward, label: VIEW_MODE_LABELS[VIEW_MODES.fixedForward] },
+    ],
+    onChange: (nextViewMode) => {
+      viewMode = nextViewMode
+      writeViewMode(viewMode)
     },
   })
   const actionWheel = createActionWheel({
@@ -280,21 +413,15 @@ export const createSceneApp = (app) => {
       player.controls.enabled = !open
     },
   })
+  const virtualPointer = createVirtualPointer({
+    app,
+    isVisible: () => (
+      viewMode === VIEW_MODES.fixedView
+      && player.controls.enabled
+      && player.controls.isLocked
+    ),
+  })
   const clock = new Clock()
-  let lastCameraStateSignature = getCameraStateSignature(camera)
-  let lastCameraStateSavedAt = 0
-
-  const persistCameraState = () => {
-    const signature = getCameraStateSignature(camera)
-    if (signature === lastCameraStateSignature) return
-
-    writeCameraState(camera)
-    lastCameraStateSignature = signature
-  }
-
-  const persistCameraStateOnUnload = () => {
-    writeCameraState(camera)
-  }
 
   const onResize = () => {
     camera.aspect = window.innerWidth / window.innerHeight
@@ -322,43 +449,49 @@ export const createSceneApp = (app) => {
   }
 
   window.addEventListener('resize', onResize)
-  window.addEventListener('beforeunload', persistCameraStateOnUnload)
   window.addEventListener('keydown', onKeyDown)
   window.addEventListener('keyup', onKeyUp)
 
   let animationFrameId = 0
 
+  const syncCameraToViewMode = () => {
+    if (viewMode === VIEW_MODES.fixedForward) {
+      environment.syncCameraToNpc6Front(camera)
+    } else {
+      // 固定视角用虚拟指针的屏幕位置决定镜头偏移和朝向。
+      environment.syncCameraToNpc6FixedView(camera, virtualPointer.getScreenOffset())
+    }
+  }
+
   const renderFrame = () => {
     const delta = clock.getDelta()
 
+    syncCameraToViewMode()
     player.update(delta)
     controlPointToggle.syncCursorVisible(!player.controls.isLocked)
-    photoModeToggle.syncCursorVisible(!player.controls.isLocked)
+    viewModeSelect.syncCursorVisible(!player.controls.isLocked)
+    virtualPointer.syncVisible()
     environment.update(delta)
+    syncCameraToViewMode()
     actionWheel.update()
     environment.updateGroundPosition(camera.position)
-    const now = window.performance.now()
-    if (now - lastCameraStateSavedAt >= CAMERA_STATE_SAVE_INTERVAL) {
-      lastCameraStateSavedAt = now
-      persistCameraState()
-    }
     renderer.render(scene, camera)
 
     animationFrameId = window.requestAnimationFrame(renderFrame)
   }
 
+  syncCameraToViewMode()
   environment.updateGroundPosition(camera.position)
   renderFrame()
 
   const dispose = () => {
     window.cancelAnimationFrame(animationFrameId)
     window.removeEventListener('resize', onResize)
-    window.removeEventListener('beforeunload', persistCameraStateOnUnload)
     window.removeEventListener('keydown', onKeyDown)
     window.removeEventListener('keyup', onKeyUp)
-    persistCameraStateOnUnload()
     controlPointToggle.dispose()
-    photoModeToggle.dispose()
+    viewModeSelect.dispose()
+    virtualPointer.dispose()
     actionWheel.dispose()
     player.dispose()
     environment.dispose()

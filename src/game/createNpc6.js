@@ -40,6 +40,12 @@ const WALK_HIP_Z = 0.12
 const WALK_BODY_SWAY_Z = 0.05
 const WALK_ARM_X = 0.62
 const WALK_FOOT_LOCK_BLEND_SPEED = 12
+const TURN_BLEND_SPEED = 9
+const TURN_CYCLE_SPEED = 13
+const TURN_BODY_TWIST_Z = 0.12
+const TURN_HIP_STEP_X = 0.24
+const TURN_KNEE_X = 0.32
+const TURN_ARM_X = 0.34
 
 const UPPER_BODY_POSES = {
   idle: {
@@ -311,6 +317,9 @@ const syncTubeStickFigurePose = ({ figure, joints }) => {
 
   Object.entries(figure.userData.endCaps).forEach(([key, endCap]) => {
     endCap.position.copy(joints[key])
+    if (key === 'head') {
+      endCap.rotation.y = HEAD_EYES_YAW + (figure.userData.facingTwistY ?? 0)
+    }
   })
 
   Object.entries(figure.userData.controlPoints).forEach(([key, controlPoint]) => {
@@ -524,6 +533,23 @@ const addWalkToLowerBodyPose = ({ pose, walkTime, walkBlend }) => {
   }
 }
 
+const addTurnToLowerBodyPose = ({ pose, turnTime, turnBlend, turnDirection }) => {
+  if (turnBlend <= 0) return pose
+
+  const step = Math.sin(turnTime) * turnDirection * turnBlend
+  const lift = Math.abs(step)
+
+  return {
+    ...pose,
+    hipZ: pose.hipZ + turnDirection * TURN_BODY_TWIST_Z * turnBlend,
+    neckRotationZ: pose.neckRotationZ - turnDirection * TURN_BODY_TWIST_Z * turnBlend,
+    hipLeftX: pose.hipLeftX - Math.max(0, step) * TURN_HIP_STEP_X,
+    kneeLeftX: pose.kneeLeftX + lift * TURN_KNEE_X,
+    hipRightX: pose.hipRightX + Math.max(0, -step) * TURN_HIP_STEP_X,
+    kneeRightX: pose.kneeRightX + lift * TURN_KNEE_X,
+  }
+}
+
 const getNpc6ArmPose = ({ bones }) => ({
   shoulderLeftZ: bones.shoulderLeft.rotation.z,
   elbowLeftZ: bones.elbowLeft.rotation.z,
@@ -604,6 +630,10 @@ const createNpc6LowerBodyController = ({ bones, joints }) => {
     walkSpeedMultiplier: 1,
     walkBlend: 0,
     walkTime: 0,
+    turning: false,
+    turnDirection: 1,
+    turnBlend: 0,
+    turnTime: 0,
     currentBasePose: poses.stand,
     transitionFrom: poses.stand,
     transitionTo: poses.stand,
@@ -628,10 +658,16 @@ const createNpc6LowerBodyController = ({ bones, joints }) => {
   }
 
   const applyPose = (pose) => {
-    const nextPose = addWalkToLowerBodyPose({
+    const walkPose = addWalkToLowerBodyPose({
       pose,
       walkTime: state.walkTime,
       walkBlend: state.walkBlend,
+    })
+    const nextPose = addTurnToLowerBodyPose({
+      pose: walkPose,
+      turnTime: state.turnTime,
+      turnBlend: state.turnBlend,
+      turnDirection: state.turnDirection,
     })
 
     state.currentBasePose = pose
@@ -656,6 +692,7 @@ const createNpc6LowerBodyController = ({ bones, joints }) => {
   const update = (delta) => {
     const targetBlend = state.buttTwistEnabled ? 1 : 0
     const targetWalkBlend = state.walking ? 1 : 0
+    const targetTurnBlend = state.turning ? 1 : 0
 
     state.buttTwistBlend = moveValueToward({
       current: state.buttTwistBlend,
@@ -673,7 +710,16 @@ const createNpc6LowerBodyController = ({ bones, joints }) => {
     if (state.walking || state.walkBlend > 0) {
       state.walkTime += delta * WALK_CYCLE_SPEED * state.walkSpeedMultiplier
     }
+    state.turnBlend = moveValueToward({
+      current: state.turnBlend,
+      target: targetTurnBlend,
+      maxStep: TURN_BLEND_SPEED * delta,
+    })
+    if (state.turning || state.turnBlend > 0) {
+      state.turnTime += delta * TURN_CYCLE_SPEED
+    }
     state.walking = false
+    state.turning = false
     state.walkSpeedMultiplier = 1
 
     if (state.phase === 'transition') {
@@ -714,9 +760,16 @@ const createNpc6LowerBodyController = ({ bones, joints }) => {
       state.walking = walking
       if (walking) state.walkSpeedMultiplier = speedMultiplier
     },
+    setTurning: (turning, direction = 1) => {
+      state.turning = turning
+      if (turning) state.turnDirection = direction
+    },
     getWalkState: () => ({
       walkBlend: state.walkBlend,
       walkTime: state.walkTime,
+      turnBlend: state.turnBlend,
+      turnTime: state.turnTime,
+      turnDirection: state.turnDirection,
     }),
     applyLowerBodyOverlay,
     update,
@@ -776,13 +829,21 @@ const createNpc6UpperBodyController = ({ bones }) => {
     mode: 'idle',
     phase: 'hold',
     waveTime: 0,
+    facingTwistY: 0,
     walkBlend: 0,
     walkTime: 0,
+    turnBlend: 0,
+    turnTime: 0,
+    turnDirection: 1,
   }
 
   const applyWalkArmSwing = () => {
     const walkBlend = state.mode === 'idle' ? state.walkBlend : 0
-    const swing = Math.sin(state.walkTime) * WALK_ARM_X * walkBlend
+    const turnBlend = state.mode === 'idle' ? state.turnBlend : 0
+    const swing = (
+      Math.sin(state.walkTime) * WALK_ARM_X * walkBlend
+      + Math.sin(state.turnTime) * TURN_ARM_X * turnBlend * state.turnDirection
+    )
 
     // 左脚向前时右臂向前，右脚向前时左臂向前，避免同手同脚。
     bones.shoulderLeft.rotation.x = swing
@@ -791,6 +852,7 @@ const createNpc6UpperBodyController = ({ bones }) => {
 
   const applyPose = (pose) => {
     applyNpc6ArmPose({ bones, pose })
+    bones.neck.rotation.y = state.facingTwistY
     applyWalkArmSwing()
   }
 
@@ -837,6 +899,14 @@ const createNpc6UpperBodyController = ({ bones }) => {
       state.walkBlend = walkBlend
       state.walkTime = walkTime
     },
+    setTurnState: ({ turnBlend, turnTime, turnDirection }) => {
+      state.turnBlend = turnBlend
+      state.turnTime = turnTime
+      state.turnDirection = turnDirection
+    },
+    setFacingTwist: (twistY) => {
+      state.facingTwistY = twistY
+    },
     update,
   }
 }
@@ -872,7 +942,10 @@ export const createNpc6 = ({
   figure.userData.updateLowerBody = lowerBody.update
   figure.userData.applyLowerBodyOverlay = lowerBody.applyLowerBodyOverlay
   figure.userData.updateUpperBody = (delta) => {
-    upperBody.setWalkState(lowerBody.getWalkState())
+    const locomotionState = lowerBody.getWalkState()
+
+    upperBody.setWalkState(locomotionState)
+    upperBody.setTurnState(locomotionState)
     upperBody.update(delta)
   }
   figure.userData.setSquatPose = (enabled) => {
@@ -889,6 +962,13 @@ export const createNpc6 = ({
   }
   figure.userData.setWalking = (walking, speedMultiplier) => {
     lowerBody.setWalking(walking, speedMultiplier)
+  }
+  figure.userData.setTurning = (turning, direction) => {
+    lowerBody.setTurning(turning, direction)
+  }
+  figure.userData.setFacingTwist = (twistY) => {
+    figure.userData.facingTwistY = twistY
+    upperBody.setFacingTwist(twistY)
   }
   figure.userData.isWalking = () => lowerBody.getWalkState().walkBlend > 0
   figure.userData.setHoldHeadPose = (enabled) => {
