@@ -39,6 +39,7 @@ const WALK_KNEE_X = 1.05
 const WALK_HIP_Z = 0.12
 const WALK_BODY_SWAY_Z = 0.05
 const WALK_ARM_X = 0.62
+const WALK_FOOT_LOCK_BLEND_SPEED = 12
 
 const UPPER_BODY_POSES = {
   idle: {
@@ -258,7 +259,7 @@ const readSkeletonJointPositions = ({ figure, bones }) => {
   return joints
 }
 
-const lockNpc6Feet = ({ figure }) => {
+const lockNpc6Feet = ({ figure, delta }) => {
   const joints = readSkeletonJointPositions({
     figure,
     bones: figure.userData.bones,
@@ -278,7 +279,11 @@ const lockNpc6Feet = ({ figure }) => {
     .multiplyScalar(1 / lockedFeet.length)
 
   // hip 是骨架根节点；用已锁定脚的平均偏移反推根节点位置，避免支撑脚被关键帧带着滑动。
-  figure.userData.skeletonRoot.position.add(offset)
+  figure.userData.skeletonRoot.position.add(
+    figure.userData.isWalking?.()
+      ? offset.multiplyScalar(1 - Math.exp(-WALK_FOOT_LOCK_BLEND_SPEED * delta))
+      : offset,
+  )
 }
 
 const createTubeGeometry = ({ keys, joints }) => {
@@ -438,7 +443,7 @@ const attachNpc6SkeletonSync = ({ figure }) => {
   figure.userData.update = (delta) => {
     figure.userData.updateLowerBody?.(delta)
     figure.userData.updateUpperBody?.(delta)
-    lockNpc6Feet({ figure })
+    lockNpc6Feet({ figure, delta })
 
     const joints = readSkeletonJointPositions({
       figure,
@@ -596,6 +601,7 @@ const createNpc6LowerBodyController = ({ bones, joints }) => {
     buttTwistBlend: 0,
     buttTwistTime: 0,
     walking: false,
+    walkSpeedMultiplier: 1,
     walkBlend: 0,
     walkTime: 0,
     currentBasePose: poses.stand,
@@ -665,9 +671,10 @@ const createNpc6LowerBodyController = ({ bones, joints }) => {
       maxStep: WALK_BLEND_SPEED * delta,
     })
     if (state.walking || state.walkBlend > 0) {
-      state.walkTime += delta * WALK_CYCLE_SPEED
+      state.walkTime += delta * WALK_CYCLE_SPEED * state.walkSpeedMultiplier
     }
     state.walking = false
+    state.walkSpeedMultiplier = 1
 
     if (state.phase === 'transition') {
       state.transitionElapsed += delta
@@ -703,8 +710,9 @@ const createNpc6LowerBodyController = ({ bones, joints }) => {
       state.buttTwistEnabled = enabled
       if (enabled) state.buttTwistTime = 0
     },
-    setWalking: (walking) => {
+    setWalking: (walking, speedMultiplier = 1) => {
       state.walking = walking
+      if (walking) state.walkSpeedMultiplier = speedMultiplier
     },
     getWalkState: () => ({
       walkBlend: state.walkBlend,
@@ -879,8 +887,8 @@ export const createNpc6 = ({
   figure.userData.setControlPointsVisible = (visible) => {
     figure.userData.controlPointGroup.visible = visible
   }
-  figure.userData.setWalking = (walking) => {
-    lowerBody.setWalking(walking)
+  figure.userData.setWalking = (walking, speedMultiplier) => {
+    lowerBody.setWalking(walking, speedMultiplier)
   }
   figure.userData.isWalking = () => lowerBody.getWalkState().walkBlend > 0
   figure.userData.setHoldHeadPose = (enabled) => {

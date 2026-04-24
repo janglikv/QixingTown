@@ -77,13 +77,14 @@ export const createEnvironment = (scene) => {
   let polarisTwinkleTime = 0
   let npc6TargetRotationY = npc6.rotation.y
   let npc6MovedThisFrame = false
+  let npc6WalkSpeedMultiplier = 1
 
-  const rotateNpc6TowardTarget = (delta) => {
+  const rotateNpc6TowardTarget = (delta, speedMultiplier) => {
     const rotationDelta = Math.atan2(
       Math.sin(npc6TargetRotationY - npc6.rotation.y),
       Math.cos(npc6TargetRotationY - npc6.rotation.y),
     )
-    const maxStep = CHARACTER_TURN_SPEED * delta
+    const maxStep = CHARACTER_TURN_SPEED * speedMultiplier * delta
 
     npc6.rotation.y += Math.sign(rotationDelta) * Math.min(Math.abs(rotationDelta), maxStep)
   }
@@ -95,9 +96,10 @@ export const createEnvironment = (scene) => {
       WORLD_TUNING.polarisMinOpacity
       + twinkle * (WORLD_TUNING.polarisMaxOpacity - WORLD_TUNING.polarisMinOpacity)
     )
-    if (npc6MovedThisFrame) rotateNpc6TowardTarget(delta)
-    npc6.userData.setWalking(npc6MovedThisFrame)
+    if (npc6MovedThisFrame) rotateNpc6TowardTarget(delta, npc6WalkSpeedMultiplier)
+    npc6.userData.setWalking(npc6MovedThisFrame, npc6WalkSpeedMultiplier)
     npc6MovedThisFrame = false
+    npc6WalkSpeedMultiplier = 1
     npc6.userData.update(delta)
   }
 
@@ -152,9 +154,10 @@ export const createEnvironment = (scene) => {
     npc6.userData.setControlPointsVisible(visible)
   }
 
-  const moveNpc6 = (offset) => {
+  const moveNpc6 = (offset, speedMultiplier = 1) => {
     npc6TargetRotationY = Math.atan2(offset.x, offset.z)
     npc6MovedThisFrame = true
+    npc6WalkSpeedMultiplier = Math.max(npc6WalkSpeedMultiplier, speedMultiplier)
     npc6.position.add(offset)
   }
 

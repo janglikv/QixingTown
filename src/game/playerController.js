@@ -18,6 +18,7 @@ export const createPlayerController = ({ camera, domElement, onCharacterMove }) 
     backward: false,
     left: false,
     right: false,
+    fast: false,
   }
 
   const moveIntent = new Vector2()
@@ -32,6 +33,7 @@ export const createPlayerController = ({ camera, domElement, onCharacterMove }) 
     movement.backward = false
     movement.left = false
     movement.right = false
+    movement.fast = false
   }
 
   const lockOnClick = () => {
@@ -54,6 +56,10 @@ export const createPlayerController = ({ camera, domElement, onCharacterMove }) 
       case 'KeyD':
         movement.right = true
         break
+      case 'ShiftLeft':
+      case 'ShiftRight':
+        movement.fast = true
+        break
       default:
         break
     }
@@ -72,6 +78,10 @@ export const createPlayerController = ({ camera, domElement, onCharacterMove }) 
         break
       case 'KeyD':
         movement.right = false
+        break
+      case 'ShiftLeft':
+      case 'ShiftRight':
+        movement.fast = false
         break
       default:
         break
@@ -105,6 +115,8 @@ export const createPlayerController = ({ camera, domElement, onCharacterMove }) 
           controls.moveRight(moveIntent.x * MOVE_SPEED * delta)
           controls.moveForward(moveIntent.y * MOVE_SPEED * delta)
         } else {
+          const speedMultiplier = movement.fast ? 2 : 1
+
           camera.getWorldDirection(moveForward)
           moveForward.y = 0
           moveForward.normalize()
@@ -113,8 +125,8 @@ export const createPlayerController = ({ camera, domElement, onCharacterMove }) 
             .copy(moveRight)
             .multiplyScalar(moveIntent.x)
             .addScaledVector(moveForward, moveIntent.y)
-            .multiplyScalar(CHARACTER_MOVE_SPEED * delta)
-          onCharacterMove(moveOffset)
+            .multiplyScalar(CHARACTER_MOVE_SPEED * speedMultiplier * delta)
+          onCharacterMove(moveOffset, speedMultiplier)
         }
       }
     }
