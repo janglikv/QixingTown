@@ -95,7 +95,7 @@ export const createEnvironment = (scene) => {
       WORLD_TUNING.polarisMinOpacity
       + twinkle * (WORLD_TUNING.polarisMaxOpacity - WORLD_TUNING.polarisMinOpacity)
     )
-    rotateNpc6TowardTarget(delta)
+    if (npc6MovedThisFrame) rotateNpc6TowardTarget(delta)
     npc6.userData.setWalking(npc6MovedThisFrame)
     npc6MovedThisFrame = false
     npc6.userData.update(delta)

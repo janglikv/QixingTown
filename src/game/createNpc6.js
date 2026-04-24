@@ -38,7 +38,7 @@ const WALK_SUPPORT_BACK_X = 0.18
 const WALK_KNEE_X = 1.05
 const WALK_HIP_Z = 0.12
 const WALK_BODY_SWAY_Z = 0.05
-const WALK_ARM_Z = 0.18
+const WALK_ARM_X = 0.62
 
 const UPPER_BODY_POSES = {
   idle: {
@@ -763,20 +763,6 @@ const getUpperBodyWavePose = ({ mode, waveTime }) => {
   }
 }
 
-const addWalkToArmPose = ({ pose, walkTime, walkBlend }) => {
-  if (walkBlend <= 0) return pose
-
-  const swing = Math.sin(walkTime) * WALK_ARM_Z * walkBlend
-
-  return {
-    ...pose,
-    shoulderLeftZ: pose.shoulderLeftZ - swing,
-    elbowLeftZ: pose.elbowLeftZ - swing * 0.35,
-    shoulderRightZ: pose.shoulderRightZ + swing,
-    elbowRightZ: pose.elbowRightZ + swing * 0.35,
-  }
-}
-
 const createNpc6UpperBodyController = ({ bones }) => {
   const state = {
     mode: 'idle',
@@ -786,15 +772,18 @@ const createNpc6UpperBodyController = ({ bones }) => {
     walkTime: 0,
   }
 
+  const applyWalkArmSwing = () => {
+    const walkBlend = state.mode === 'idle' ? state.walkBlend : 0
+    const swing = Math.sin(state.walkTime) * WALK_ARM_X * walkBlend
+
+    // 左脚向前时右臂向前，右脚向前时左臂向前，避免同手同脚。
+    bones.shoulderLeft.rotation.x = swing
+    bones.shoulderRight.rotation.x = -swing
+  }
+
   const applyPose = (pose) => {
-    applyNpc6ArmPose({
-      bones,
-      pose: addWalkToArmPose({
-        pose,
-        walkTime: state.walkTime,
-        walkBlend: state.walkBlend,
-      }),
-    })
+    applyNpc6ArmPose({ bones, pose })
+    applyWalkArmSwing()
   }
 
   const setMode = (mode) => {
