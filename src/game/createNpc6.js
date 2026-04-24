@@ -28,6 +28,9 @@ const WAVE_LOOP_SPEED = 7.4
 const LOWER_BODY_TRANSITION_DURATION = 0.46
 const SQUAT_ACTION_SPEED = 3.4
 const SQUAT_BODY_FORWARD_Z = 0.28
+const BUTT_TWIST_ACTION_SPEED = 7.2
+const BUTT_TWIST_HIP_X = 0.16
+const BUTT_TWIST_THIGH_Z = 0.22
 
 const UPPER_BODY_POSES = {
   idle: {
@@ -430,32 +433,42 @@ const attachNpc6SkeletonSync = ({ figure }) => {
 
 const createLowerBodyPoses = (joints) => {
   const neckOffset = joints.neck.clone().sub(joints.hip)
+  const hipLeftOffset = joints.hipLeft.clone().sub(joints.hip)
+  const hipRightOffset = joints.hipRight.clone().sub(joints.hip)
 
   return {
     stand: {
+      rootX: joints.hip.x,
+      hipZ: 0,
+      hipLeftOffsetX: hipLeftOffset.x,
+      hipRightOffsetX: hipRightOffset.x,
+      neckX: neckOffset.x,
       neckZ: neckOffset.z,
+      neckRotationZ: 0,
       hipLeftX: 0,
+      hipLeftZ: 0,
       kneeLeftX: 0,
       hipRightX: 0,
+      hipRightZ: 0,
       kneeRightX: 0,
     },
     squat: {
+      rootX: joints.hip.x,
+      hipZ: 0,
+      hipLeftOffsetX: hipLeftOffset.x,
+      hipRightOffsetX: hipRightOffset.x,
+      neckX: neckOffset.x,
       neckZ: neckOffset.z + SQUAT_BODY_FORWARD_Z,
+      neckRotationZ: 0,
       hipLeftX: -1.3,
+      hipLeftZ: 0,
       kneeLeftX: 1.85,
       hipRightX: -1.3,
+      hipRightZ: 0,
       kneeRightX: 1.85,
     },
   }
 }
-
-const getNpc6LowerBodyPose = ({ bones }) => ({
-  neckZ: bones.neck.position.z,
-  hipLeftX: bones.hipLeft.rotation.x,
-  kneeLeftX: bones.kneeLeft.rotation.x,
-  hipRightX: bones.hipRight.rotation.x,
-  kneeRightX: bones.kneeRight.rotation.x,
-})
 
 const getNpc6ArmPose = ({ bones }) => ({
   shoulderLeftZ: bones.shoulderLeft.rotation.z,
@@ -502,10 +515,18 @@ const smoothStep = (value) => {
 }
 
 const applyNpc6LowerBodyPose = ({ bones, pose }) => {
+  bones.hip.position.x = pose.rootX
+  bones.hip.rotation.z = pose.hipZ
+  bones.hipLeft.position.x = pose.hipLeftOffsetX
+  bones.hipRight.position.x = pose.hipRightOffsetX
+  bones.neck.position.x = pose.neckX
   bones.neck.position.z = pose.neckZ
+  bones.neck.rotation.z = pose.neckRotationZ
   bones.hipLeft.rotation.x = pose.hipLeftX
+  bones.hipLeft.rotation.z = pose.hipLeftZ
   bones.kneeLeft.rotation.x = pose.kneeLeftX
   bones.hipRight.rotation.x = pose.hipRightX
+  bones.hipRight.rotation.z = pose.hipRightZ
   bones.kneeRight.rotation.x = pose.kneeRightX
 }
 
@@ -522,6 +543,9 @@ const createNpc6LowerBodyController = ({ bones, joints }) => {
     mode: 'stand',
     phase: 'hold',
     actionTime: 0,
+    buttTwistEnabled: false,
+    buttTwistTime: 0,
+    currentBasePose: poses.stand,
     transitionFrom: poses.stand,
     transitionTo: poses.stand,
     transitionElapsed: 0,
@@ -539,24 +563,49 @@ const createNpc6LowerBodyController = ({ bones, joints }) => {
     state.mode = mode
     state.phase = 'transition'
     state.actionTime = 0
-    state.transitionFrom = getNpc6LowerBodyPose({ bones })
+    state.transitionFrom = state.currentBasePose
     state.transitionTo = getTargetPose()
     state.transitionElapsed = 0
   }
 
+  const applyPose = (pose) => {
+    state.currentBasePose = pose
+
+    if (!state.buttTwistEnabled) {
+      applyNpc6LowerBodyPose({ bones, pose })
+      return
+    }
+
+    const sway = Math.sin(state.buttTwistTime)
+    const hipOffset = sway * BUTT_TWIST_HIP_X
+
+    // 在当前基础姿态上叠加：腰/胯左右摆，大腿跟随转向，肩膀通过 neck 反向位移保持稳定。
+    applyNpc6LowerBodyPose({
+      bones,
+      pose: {
+        ...pose,
+        rootX: pose.rootX + hipOffset,
+        hipLeftOffsetX: pose.hipLeftOffsetX - hipOffset,
+        hipRightOffsetX: pose.hipRightOffsetX - hipOffset,
+        neckX: pose.neckX - hipOffset,
+        hipLeftZ: pose.hipLeftZ + sway * BUTT_TWIST_THIGH_Z,
+        hipRightZ: pose.hipRightZ + sway * BUTT_TWIST_THIGH_Z,
+      },
+    })
+  }
+
   const update = (delta) => {
+    if (state.buttTwistEnabled) state.buttTwistTime += delta * BUTT_TWIST_ACTION_SPEED
+
     if (state.phase === 'transition') {
       state.transitionElapsed += delta
-      applyNpc6LowerBodyPose({
-        bones,
-        pose: mixPose({
-          from: state.transitionFrom,
-          to: state.transitionTo,
-          amount: smoothStep(state.transitionElapsed / LOWER_BODY_TRANSITION_DURATION),
-        }),
-      })
+      applyPose(mixPose({
+        from: state.transitionFrom,
+        to: state.transitionTo,
+        amount: smoothStep(state.transitionElapsed / LOWER_BODY_TRANSITION_DURATION),
+      }))
       if (state.transitionElapsed >= LOWER_BODY_TRANSITION_DURATION) {
-        applyNpc6LowerBodyPose({ bones, pose: state.transitionTo })
+        applyPose(state.transitionTo)
         if (state.mode === 'squatAction') state.actionTime = 0
         state.phase = state.mode === 'squatAction' ? 'actionLoop' : 'hold'
       }
@@ -565,22 +614,23 @@ const createNpc6LowerBodyController = ({ bones, joints }) => {
 
     if (state.phase === 'actionLoop') {
       state.actionTime += delta * SQUAT_ACTION_SPEED
-      applyNpc6LowerBodyPose({
-        bones,
-        pose: mixPose({
-          from: poses.stand,
-          to: poses.squat,
-          amount: (Math.cos(state.actionTime) + 1) / 2,
-        }),
-      })
+      applyPose(mixPose({
+        from: poses.stand,
+        to: poses.squat,
+        amount: (Math.cos(state.actionTime) + 1) / 2,
+      }))
       return
     }
 
-    applyNpc6LowerBodyPose({ bones, pose: getTargetPose() })
+    applyPose(getTargetPose())
   }
 
   return {
     setMode,
+    setButtTwistEnabled: (enabled) => {
+      state.buttTwistEnabled = enabled
+      if (enabled) state.buttTwistTime = 0
+    },
     update,
   }
 }
@@ -696,6 +746,7 @@ export const createNpc6 = ({
   upperPose = 'idle',
   squatPose = false,
   squatAction = false,
+  buttTwistAction = false,
 } = {}) => {
   const joints = createNpc6JointPositions(proportions)
   const skeleton = createNpc6Skeleton(joints)
@@ -723,6 +774,9 @@ export const createNpc6 = ({
   }
   figure.userData.setSquatAction = (enabled) => {
     lowerBody.setMode(enabled ? 'squatAction' : 'stand')
+  }
+  figure.userData.setButtTwistAction = (enabled) => {
+    lowerBody.setButtTwistEnabled(enabled)
   }
   figure.userData.setHoldHeadPose = (enabled) => {
     upperBody.setMode(enabled ? 'holdHead' : 'idle')
@@ -770,6 +824,9 @@ export const createNpc6 = ({
     figure.userData.setSquatAction(true)
   } else if (squatPose) {
     figure.userData.setSquatPose(true)
+  }
+  if (buttTwistAction) {
+    figure.userData.setButtTwistAction(true)
   }
 
   figure.userData.dispose = () => {

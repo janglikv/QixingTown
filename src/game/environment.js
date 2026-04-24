@@ -52,6 +52,7 @@ export const createEnvironment = (scene) => {
     upperPose: 'idle',
     squatPose: false,
     squatAction: false,
+    buttTwistAction: false,
     waveAction: null,
   }
   scene.add(starField, polaris, npc6)
@@ -126,6 +127,11 @@ export const createEnvironment = (scene) => {
     npc6.userData.setSquatAction(enabled)
   }
 
+  const setNpc6ButtTwistAction = (enabled) => {
+    npc6State.buttTwistAction = enabled
+    npc6.userData.setButtTwistAction(enabled)
+  }
+
   const setNpc6WaveAction = (side) => {
     const nextAction = npc6State.waveAction === side ? null : side
 
@@ -165,6 +171,7 @@ export const createEnvironment = (scene) => {
     setNpc6HandRaise,
     setNpc6SquatPose,
     setNpc6SquatAction,
+    setNpc6ButtTwistAction,
     setNpc6WaveAction,
     update,
     updateGroundPosition,

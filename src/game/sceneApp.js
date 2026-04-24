@@ -104,6 +104,11 @@ export const createSceneApp = (app) => {
         toggle: () => environment.setNpc6SquatAction(!environment.npc6State.squatAction),
       },
       {
+        label: '[动]扭屁股',
+        isActive: () => environment.npc6State.buttTwistAction,
+        toggle: () => environment.setNpc6ButtTwistAction(!environment.npc6State.buttTwistAction),
+      },
+      {
         label: '抱头',
         isActive: () => environment.npc6State.upperPose === 'holdHead',
         toggle: () => environment.setNpc6HoldHead(environment.npc6State.upperPose !== 'holdHead'),
