@@ -12,10 +12,12 @@ import {
 const UI_DISTANCE = 1.6
 const WHEEL_INNER_RADIUS = 0.28
 const WHEEL_OUTER_RADIUS = 0.48
+const CHILD_WHEEL_INNER_RADIUS = 0.52
+const CHILD_WHEEL_OUTER_RADIUS = 0.78
 const SEGMENT_GAP_PIXELS = 1
 const LABEL_WIDTH = 0.34
 const LABEL_HEIGHT = 0.13
-const POINTER_LIMIT = 0.48
+const POINTER_LIMIT = 0.78
 const POINTER_SELECT_MIN = 0.1
 const LABEL_TEXTURE_WIDTH = 512
 const LABEL_TEXTURE_HEIGHT = Math.round(LABEL_TEXTURE_WIDTH * (LABEL_HEIGHT / LABEL_WIDTH))
@@ -41,13 +43,37 @@ const createLabelTexture = (text) => {
   return texture
 }
 
-const createSegmentGeometry = ({ index, total, gapAngle }) => {
+const getSegmentCenterAngle = ({ index, total }) => {
   const slice = (Math.PI * 2) / total
-  const center = Math.PI / 2 - index * slice
+
+  return Math.PI / 2 - index * slice
+}
+
+const getChildSegmentCenterAngle = ({ index, total, parentIndex, parentTotal }) => {
+  const parentSlice = (Math.PI * 2) / parentTotal
+  const childSlice = parentSlice / total
+
+  return getSegmentCenterAngle({ index: parentIndex, total: parentTotal })
+    + ((total - 1) / 2 - index) * childSlice
+}
+
+const createSegmentGeometry = ({
+  index,
+  total,
+  gapAngle,
+  innerRadius,
+  outerRadius,
+  parentIndex = null,
+  parentTotal = null,
+}) => {
+  const slice = parentTotal ? (Math.PI * 2) / parentTotal / total : (Math.PI * 2) / total
+  const center = parentTotal
+    ? getChildSegmentCenterAngle({ index, total, parentIndex, parentTotal })
+    : getSegmentCenterAngle({ index, total })
 
   return new RingGeometry(
-    WHEEL_INNER_RADIUS,
-    WHEEL_OUTER_RADIUS,
+    innerRadius,
+    outerRadius,
     48,
     1,
     center - slice / 2 + gapAngle / 2,
@@ -55,7 +81,15 @@ const createSegmentGeometry = ({ index, total, gapAngle }) => {
   )
 }
 
-const createWheelSegment = ({ index, total, gapAngle }) => {
+const createWheelSegment = ({
+  index,
+  total,
+  gapAngle,
+  innerRadius = WHEEL_INNER_RADIUS,
+  outerRadius = WHEEL_OUTER_RADIUS,
+  parentIndex = null,
+  parentTotal = null,
+}) => {
   const material = new MeshBasicMaterial({
     color: '#4a4a4a',
     opacity: 0.72,
@@ -64,16 +98,37 @@ const createWheelSegment = ({ index, total, gapAngle }) => {
     depthTest: false,
     depthWrite: false,
   })
-  const mesh = new Mesh(createSegmentGeometry({ index, total, gapAngle }), material)
-  mesh.renderOrder = 1000
+  const mesh = new Mesh(createSegmentGeometry({
+    index,
+    total,
+    gapAngle,
+    innerRadius,
+    outerRadius,
+    parentIndex,
+    parentTotal,
+  }), material)
+  mesh.renderOrder = parentTotal ? 1002 : 1000
   mesh.userData.index = index
+  mesh.userData.total = total
+  mesh.userData.innerRadius = innerRadius
+  mesh.userData.outerRadius = outerRadius
+  mesh.userData.parentIndex = parentIndex
+  mesh.userData.parentTotal = parentTotal
 
   return mesh
 }
 
-const createWheelLabel = ({ action, index, total }) => {
-  const slice = (Math.PI * 2) / total
-  const angle = Math.PI / 2 - index * slice
+const createWheelLabel = ({
+  action,
+  index,
+  total,
+  radius = (WHEEL_INNER_RADIUS + WHEEL_OUTER_RADIUS) / 2,
+  parentIndex = null,
+  parentTotal = null,
+}) => {
+  const angle = parentTotal
+    ? getChildSegmentCenterAngle({ index, total, parentIndex, parentTotal })
+    : getSegmentCenterAngle({ index, total })
   const texture = createLabelTexture(action.label)
   const material = new MeshBasicMaterial({
     map: texture,
@@ -84,10 +139,9 @@ const createWheelLabel = ({ action, index, total }) => {
     depthWrite: false,
   })
   const mesh = new Mesh(new PlaneGeometry(LABEL_WIDTH, LABEL_HEIGHT), material)
-  const labelRadius = (WHEEL_INNER_RADIUS + WHEEL_OUTER_RADIUS) / 2
 
-  mesh.position.set(Math.cos(angle) * labelRadius, Math.sin(angle) * labelRadius, 0.01)
-  mesh.renderOrder = 1001
+  mesh.position.set(Math.cos(angle) * radius, Math.sin(angle) * radius, 0.01)
+  mesh.renderOrder = parentTotal ? 1003 : 1001
   mesh.userData.texture = texture
 
   return mesh
@@ -104,7 +158,7 @@ const createPointer = () => {
   })
   const pointer = new Mesh(new RingGeometry(0.018, 0.034, 24), material)
   pointer.position.z = 0.02
-  pointer.renderOrder = 1002
+  pointer.renderOrder = 1004
   return pointer
 }
 
@@ -118,28 +172,37 @@ const getSelectedIndex = ({ pointer, actionCount }) => {
   return Math.floor(normalized / slice)
 }
 
+const getSelectedChildIndex = ({ pointer, parentIndex, parentTotal, childCount }) => {
+  const radius = pointer.length()
+  if (radius < CHILD_WHEEL_INNER_RADIUS || radius > CHILD_WHEEL_OUTER_RADIUS) return -1
+
+  const angle = Math.atan2(pointer.y, pointer.x)
+  const parentSlice = (Math.PI * 2) / parentTotal
+  const childSlice = parentSlice / childCount
+  const normalized = (Math.PI / 2 - angle + parentSlice / 2 + Math.PI * 2) % (Math.PI * 2)
+  const local = normalized - parentIndex * parentSlice
+
+  if (local < 0 || local >= parentSlice) return -1
+
+  return Math.floor(local / childSlice)
+}
+
 export const createActionWheel = ({ scene, camera, domElement, actions, onOpenChange }) => {
   const group = new Group()
   const pointer = createPointer()
   const pointerPosition = new Vector3(0, 0, 0)
-  const segments = actions.map((action, index) => createWheelSegment({
-    index,
-    total: actions.length,
-    gapAngle: 0,
-  }))
-  const labels = actions.map((action, index) => createWheelLabel({
-    action,
-    index,
-    total: actions.length,
-  }))
+  let segments = []
+  let labels = []
+  let childSegments = []
+  let childLabels = []
   let isOpen = false
   let selectedIndex = -1
+  let selectedChildIndex = -1
+  let childParentIndex = -1
   let lastViewportHeight = 0
 
   group.visible = false
   group.name = 'action-wheel'
-  segments.forEach((segment) => group.add(segment))
-  labels.forEach((label) => group.add(label))
   group.add(pointer)
   scene.add(group)
 
@@ -152,18 +215,49 @@ export const createActionWheel = ({ scene, camera, domElement, actions, onOpenCh
     return gapWorld / centerRadius
   }
 
+  const disposeMeshes = ({ targetSegments, targetLabels }) => {
+    targetSegments.forEach((segment) => {
+      group.remove(segment)
+      segment.geometry.dispose()
+      segment.material.dispose()
+    })
+    targetLabels.forEach((label) => {
+      group.remove(label)
+      label.geometry.dispose()
+      label.material.dispose()
+      label.userData.texture.dispose()
+    })
+  }
+
+  const disposeSegments = () => {
+    disposeMeshes({ targetSegments: segments, targetLabels: labels })
+    segments = []
+    labels = []
+  }
+
+  const disposeChildSegments = () => {
+    disposeMeshes({ targetSegments: childSegments, targetLabels: childLabels })
+    childSegments = []
+    childLabels = []
+    childParentIndex = -1
+  }
+
   const syncSegmentGaps = () => {
     const viewportHeight = domElement.clientHeight || window.innerHeight
     if (viewportHeight === lastViewportHeight) return
 
     lastViewportHeight = viewportHeight
     const gapAngle = getSegmentGapAngle()
-    segments.forEach((segment) => {
+    ;[...segments, ...childSegments].forEach((segment) => {
       segment.geometry.dispose()
       segment.geometry = createSegmentGeometry({
         index: segment.userData.index,
-        total: actions.length,
+        total: segment.userData.total,
         gapAngle,
+        innerRadius: segment.userData.innerRadius,
+        outerRadius: segment.userData.outerRadius,
+        parentIndex: segment.userData.parentIndex,
+        parentTotal: segment.userData.parentTotal,
       })
     })
   }
@@ -171,11 +265,71 @@ export const createActionWheel = ({ scene, camera, domElement, actions, onOpenCh
   const syncVisualState = () => {
     segments.forEach((segment, index) => {
       const selected = index === selectedIndex
-      const active = actions[index].isActive()
+      const active = actions[index].isActive?.()
 
       segment.material.color.set(selected ? '#8f8f8f' : active ? '#666666' : '#3f3f3f')
       segment.material.opacity = selected ? 0.56 : active ? 0.5 : 0.38
     })
+    childSegments.forEach((segment, index) => {
+      const selected = index === selectedChildIndex
+      const active = actions[childParentIndex]?.children?.[index]?.isActive?.()
+
+      segment.material.color.set(selected ? '#9a9a9a' : active ? '#6d6d6d' : '#464646')
+      segment.material.opacity = selected ? 0.58 : active ? 0.52 : 0.4
+    })
+  }
+
+  const rebuildMenu = () => {
+    disposeSegments()
+    disposeChildSegments()
+    segments = actions.map((action, index) => createWheelSegment({
+      index,
+      total: actions.length,
+      gapAngle: 0,
+    }))
+    labels = actions.map((action, index) => createWheelLabel({
+      action,
+      index,
+      total: actions.length,
+    }))
+    segments.forEach((segment) => group.add(segment))
+    labels.forEach((label) => group.add(label))
+    group.add(pointer)
+    lastViewportHeight = 0
+    syncSegmentGaps()
+    syncVisualState()
+  }
+
+  const rebuildChildMenu = (parentIndex) => {
+    if (childParentIndex === parentIndex) return
+
+    disposeChildSegments()
+    const parentAction = actions[parentIndex]
+    if (!parentAction?.children) return
+
+    childParentIndex = parentIndex
+    childSegments = parentAction.children.map((action, index) => createWheelSegment({
+      index,
+      total: parentAction.children.length,
+      gapAngle: 0,
+      innerRadius: CHILD_WHEEL_INNER_RADIUS,
+      outerRadius: CHILD_WHEEL_OUTER_RADIUS,
+      parentIndex,
+      parentTotal: actions.length,
+    }))
+    childLabels = parentAction.children.map((action, index) => createWheelLabel({
+      action,
+      index,
+      total: parentAction.children.length,
+      radius: (CHILD_WHEEL_INNER_RADIUS + CHILD_WHEEL_OUTER_RADIUS) / 2,
+      parentIndex,
+      parentTotal: actions.length,
+    }))
+    childSegments.forEach((segment) => group.add(segment))
+    childLabels.forEach((label) => group.add(label))
+    group.add(pointer)
+    lastViewportHeight = 0
+    syncSegmentGaps()
   }
 
   const handleMouseMove = (event) => {
@@ -192,17 +346,45 @@ export const createActionWheel = ({ scene, camera, domElement, actions, onOpenCh
       pointer: pointerPosition,
       actionCount: actions.length,
     })
+
+    if (actions[selectedIndex]?.children) {
+      rebuildChildMenu(selectedIndex)
+      selectedChildIndex = getSelectedChildIndex({
+        pointer: pointerPosition,
+        parentIndex: selectedIndex,
+        parentTotal: actions.length,
+        childCount: actions[selectedIndex].children.length,
+      })
+    } else {
+      selectedChildIndex = -1
+      disposeChildSegments()
+    }
     syncVisualState()
+  }
+
+  const applySelectedAction = () => {
+    const action = actions[selectedIndex]
+    if (!action) return
+
+    if (action.children) {
+      const child = action.children[selectedChildIndex] ?? action.children[0]
+
+      child?.toggle?.()
+      return
+    }
+
+    action.toggle?.()
   }
 
   const open = () => {
     if (isOpen) return
 
+    rebuildMenu()
     isOpen = true
     selectedIndex = -1
+    selectedChildIndex = -1
     pointerPosition.set(0, 0, 0)
     pointer.position.set(0, 0, 0.02)
-    syncSegmentGaps()
     group.visible = true
     syncVisualState()
     onOpenChange?.(true)
@@ -211,11 +393,11 @@ export const createActionWheel = ({ scene, camera, domElement, actions, onOpenCh
   const close = ({ applySelection = false } = {}) => {
     if (!isOpen) return
 
-    const action = applySelection ? actions[selectedIndex] : null
+    if (applySelection) applySelectedAction()
     isOpen = false
     group.visible = false
     onOpenChange?.(false)
-    action?.toggle()
+    disposeChildSegments()
   }
 
   const update = () => {
@@ -230,20 +412,14 @@ export const createActionWheel = ({ scene, camera, domElement, actions, onOpenCh
   const dispose = () => {
     window.removeEventListener('mousemove', handleMouseMove)
     scene.remove(group)
-    segments.forEach((segment) => {
-      segment.geometry.dispose()
-      segment.material.dispose()
-    })
-    labels.forEach((label) => {
-      label.geometry.dispose()
-      label.material.dispose()
-      label.userData.texture.dispose()
-    })
+    disposeSegments()
+    disposeChildSegments()
     pointer.geometry.dispose()
     pointer.material.dispose()
   }
 
   window.addEventListener('mousemove', handleMouseMove)
+  rebuildMenu()
 
   return {
     open,

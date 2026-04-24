@@ -1,12 +1,13 @@
-import { Vector2 } from 'three'
+import { Vector2, Vector3 } from 'three'
 import { PointerLockControls } from 'three/examples/jsm/controls/PointerLockControls.js'
 import {
   CAMERA_HEIGHT,
+  CHARACTER_MOVE_SPEED,
   MOVE_SPEED,
   WORLD_TUNING,
 } from '../config.js'
 
-export const createPlayerController = ({ camera, domElement }) => {
+export const createPlayerController = ({ camera, domElement, onCharacterMove }) => {
   const controls = new PointerLockControls(camera, domElement)
   controls.pointerSpeed = WORLD_TUNING.pointerSpeed
   controls.minPolarAngle = WORLD_TUNING.minPolarAngle
@@ -20,6 +21,11 @@ export const createPlayerController = ({ camera, domElement }) => {
   }
 
   const moveIntent = new Vector2()
+  const moveForward = new Vector3()
+  const moveRight = new Vector3()
+  const moveOffset = new Vector3()
+  const worldUp = new Vector3(0, 1, 0)
+  let photoMode = true
 
   const resetMovement = () => {
     movement.forward = false
@@ -95,8 +101,21 @@ export const createPlayerController = ({ camera, domElement }) => {
 
       if (moveIntent.lengthSq() > 0) {
         moveIntent.normalize()
-        controls.moveRight(moveIntent.x * MOVE_SPEED * delta)
-        controls.moveForward(moveIntent.y * MOVE_SPEED * delta)
+        if (photoMode) {
+          controls.moveRight(moveIntent.x * MOVE_SPEED * delta)
+          controls.moveForward(moveIntent.y * MOVE_SPEED * delta)
+        } else {
+          camera.getWorldDirection(moveForward)
+          moveForward.y = 0
+          moveForward.normalize()
+          moveRight.crossVectors(moveForward, worldUp).normalize()
+          moveOffset
+            .copy(moveRight)
+            .multiplyScalar(moveIntent.x)
+            .addScaledVector(moveForward, moveIntent.y)
+            .multiplyScalar(CHARACTER_MOVE_SPEED * delta)
+          onCharacterMove(moveOffset)
+        }
       }
     }
 
@@ -117,6 +136,10 @@ export const createPlayerController = ({ camera, domElement }) => {
 
   return {
     controls,
+    setPhotoMode: (enabled) => {
+      photoMode = enabled
+      resetMovement()
+    },
     update,
     dispose,
   }

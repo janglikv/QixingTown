@@ -18,6 +18,7 @@ const createRenderer = (app) => {
 const CAMERA_STATE_STORAGE_KEY = 'qixing-town:camera-state'
 const CAMERA_STATE_SAVE_INTERVAL = 250
 const CONTROL_POINTS_VISIBLE_STORAGE_KEY = 'qixing-town:control-points-visible'
+const PHOTO_MODE_STORAGE_KEY = 'qixing-town:photo-mode'
 
 const isFiniteNumberArray = (value, length) => (
   Array.isArray(value)
@@ -74,18 +75,36 @@ const writeControlPointsVisible = (visible) => {
   }
 }
 
-const createControlPointToggle = ({ app, initialVisible, onChange }) => {
+const readPhotoMode = () => {
+  try {
+    const value = window.localStorage.getItem(PHOTO_MODE_STORAGE_KEY)
+
+    return value === null ? true : value === 'true'
+  } catch {
+    return true
+  }
+}
+
+const writePhotoMode = (enabled) => {
+  try {
+    window.localStorage.setItem(PHOTO_MODE_STORAGE_KEY, String(enabled))
+  } catch {
+    // Storage can be unavailable in restricted browser modes.
+  }
+}
+
+const createTopRightToggle = ({ app, initialChecked, top, labelText, onChange }) => {
   const label = document.createElement('label')
   const checkbox = document.createElement('input')
   const text = document.createElement('span')
 
   checkbox.type = 'checkbox'
-  checkbox.checked = initialVisible
-  text.textContent = '控制点'
+  checkbox.checked = initialChecked
+  text.textContent = labelText
   Object.assign(label.style, {
     position: 'absolute',
     right: '14px',
-    top: '14px',
+    top,
     zIndex: '10',
     display: 'none',
     alignItems: 'center',
@@ -155,18 +174,33 @@ export const createSceneApp = (app) => {
   const camera = createCamera()
   const renderer = createRenderer(app)
   const environment = createEnvironment(scene)
+  const photoMode = readPhotoMode()
   const player = createPlayerController({
     camera,
     domElement: renderer.domElement,
+    onCharacterMove: environment.moveNpc6,
   })
+  player.setPhotoMode(photoMode)
   const controlPointsVisible = readControlPointsVisible()
   environment.setNpc6ControlPointsVisible(controlPointsVisible)
-  const controlPointToggle = createControlPointToggle({
+  const controlPointToggle = createTopRightToggle({
     app,
-    initialVisible: controlPointsVisible,
+    initialChecked: controlPointsVisible,
+    top: '14px',
+    labelText: '控制点',
     onChange: (visible) => {
       environment.setNpc6ControlPointsVisible(visible)
       writeControlPointsVisible(visible)
+    },
+  })
+  const photoModeToggle = createTopRightToggle({
+    app,
+    initialChecked: photoMode,
+    top: '54px',
+    labelText: '拍照模式',
+    onChange: (enabled) => {
+      player.setPhotoMode(enabled)
+      writePhotoMode(enabled)
     },
   })
   const actionWheel = createActionWheel({
@@ -185,7 +219,7 @@ export const createSceneApp = (app) => {
         toggle: () => environment.setNpc6SquatAction(!environment.npc6State.squatAction),
       },
       {
-        label: '[动]扭屁股',
+        label: '[动]扭腰',
         isActive: () => environment.npc6State.buttTwistAction,
         toggle: () => environment.setNpc6ButtTwistAction(!environment.npc6State.buttTwistAction),
       },
@@ -195,39 +229,51 @@ export const createSceneApp = (app) => {
         toggle: () => environment.setNpc6HoldHead(environment.npc6State.upperPose !== 'holdHead'),
       },
       {
-        label: '举手-左',
-        isActive: () => environment.npc6State.upperPose === 'left',
-        toggle: () => environment.setNpc6HandRaise('left'),
+        label: '举手',
+        isActive: () => ['left', 'right', 'both'].includes(environment.npc6State.upperPose),
+        children: [
+          {
+            label: '左手',
+            isActive: () => environment.npc6State.upperPose === 'left',
+            toggle: () => environment.setNpc6HandRaise('left'),
+          },
+          {
+            label: '右手',
+            isActive: () => environment.npc6State.upperPose === 'right',
+            toggle: () => environment.setNpc6HandRaise('right'),
+          },
+          {
+            label: '双手',
+            isActive: () => environment.npc6State.upperPose === 'both',
+            toggle: () => environment.setNpc6HandRaise('both'),
+          },
+        ],
       },
       {
-        label: '举手-右',
-        isActive: () => environment.npc6State.upperPose === 'right',
-        toggle: () => environment.setNpc6HandRaise('right'),
-      },
-      {
-        label: '举手-双手',
-        isActive: () => environment.npc6State.upperPose === 'both',
-        toggle: () => environment.setNpc6HandRaise('both'),
-      },
-      {
-        label: '[动]挥左',
-        isActive: () => environment.npc6State.waveAction === 'left',
-        toggle: () => environment.setNpc6WaveAction('left'),
-      },
-      {
-        label: '[动]挥右',
-        isActive: () => environment.npc6State.waveAction === 'right',
-        toggle: () => environment.setNpc6WaveAction('right'),
-      },
-      {
-        label: '[动]双挥对称',
-        isActive: () => environment.npc6State.waveAction === 'bothSame',
-        toggle: () => environment.setNpc6WaveAction('bothSame'),
-      },
-      {
-        label: '[动]双挥同',
-        isActive: () => environment.npc6State.waveAction === 'bothMirror',
-        toggle: () => environment.setNpc6WaveAction('bothMirror'),
+        label: '挥手',
+        isActive: () => environment.npc6State.waveAction !== null,
+        children: [
+          {
+            label: '挥左',
+            isActive: () => environment.npc6State.waveAction === 'left',
+            toggle: () => environment.setNpc6WaveAction('left'),
+          },
+          {
+            label: '挥右',
+            isActive: () => environment.npc6State.waveAction === 'right',
+            toggle: () => environment.setNpc6WaveAction('right'),
+          },
+          {
+            label: '双挥对称',
+            isActive: () => environment.npc6State.waveAction === 'bothSame',
+            toggle: () => environment.setNpc6WaveAction('bothSame'),
+          },
+          {
+            label: '双挥同',
+            isActive: () => environment.npc6State.waveAction === 'bothMirror',
+            toggle: () => environment.setNpc6WaveAction('bothMirror'),
+          },
+        ],
       },
     ],
     onOpenChange: (open) => {
@@ -287,6 +333,7 @@ export const createSceneApp = (app) => {
 
     player.update(delta)
     controlPointToggle.syncCursorVisible(!player.controls.isLocked)
+    photoModeToggle.syncCursorVisible(!player.controls.isLocked)
     environment.update(delta)
     actionWheel.update()
     environment.updateGroundPosition(camera.position)
@@ -311,6 +358,7 @@ export const createSceneApp = (app) => {
     window.removeEventListener('keyup', onKeyUp)
     persistCameraStateOnUnload()
     controlPointToggle.dispose()
+    photoModeToggle.dispose()
     actionWheel.dispose()
     player.dispose()
     environment.dispose()

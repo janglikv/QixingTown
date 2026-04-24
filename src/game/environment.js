@@ -8,6 +8,7 @@ import {
   PlaneGeometry,
 } from 'three'
 import {
+  CHARACTER_TURN_SPEED,
   GROUND_REPOSITION_STEP,
   GROUND_SIZE,
   WORLD_COLORS,
@@ -74,6 +75,18 @@ export const createEnvironment = (scene) => {
   let lastGroundCellX = Number.NaN
   let lastGroundCellZ = Number.NaN
   let polarisTwinkleTime = 0
+  let npc6TargetRotationY = npc6.rotation.y
+  let npc6MovedThisFrame = false
+
+  const rotateNpc6TowardTarget = (delta) => {
+    const rotationDelta = Math.atan2(
+      Math.sin(npc6TargetRotationY - npc6.rotation.y),
+      Math.cos(npc6TargetRotationY - npc6.rotation.y),
+    )
+    const maxStep = CHARACTER_TURN_SPEED * delta
+
+    npc6.rotation.y += Math.sign(rotationDelta) * Math.min(Math.abs(rotationDelta), maxStep)
+  }
 
   const update = (delta) => {
     polarisTwinkleTime += delta * WORLD_TUNING.polarisTwinkleSpeed
@@ -82,6 +95,9 @@ export const createEnvironment = (scene) => {
       WORLD_TUNING.polarisMinOpacity
       + twinkle * (WORLD_TUNING.polarisMaxOpacity - WORLD_TUNING.polarisMinOpacity)
     )
+    rotateNpc6TowardTarget(delta)
+    npc6.userData.setWalking(npc6MovedThisFrame)
+    npc6MovedThisFrame = false
     npc6.userData.update(delta)
   }
 
@@ -136,6 +152,12 @@ export const createEnvironment = (scene) => {
     npc6.userData.setControlPointsVisible(visible)
   }
 
+  const moveNpc6 = (offset) => {
+    npc6TargetRotationY = Math.atan2(offset.x, offset.z)
+    npc6MovedThisFrame = true
+    npc6.position.add(offset)
+  }
+
   const setNpc6WaveAction = (side) => {
     const nextAction = npc6State.waveAction === side ? null : side
 
@@ -177,6 +199,7 @@ export const createEnvironment = (scene) => {
     setNpc6SquatAction,
     setNpc6ButtTwistAction,
     setNpc6ControlPointsVisible,
+    moveNpc6,
     setNpc6WaveAction,
     update,
     updateGroundPosition,

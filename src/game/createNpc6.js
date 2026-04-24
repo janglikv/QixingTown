@@ -30,7 +30,15 @@ const SQUAT_ACTION_SPEED = 3.4
 const SQUAT_BODY_FORWARD_Z = 0.28
 const BUTT_TWIST_ACTION_SPEED = 7.2
 const BUTT_TWIST_HIP_X = 0.16
-const BUTT_TWIST_THIGH_Z = 0.22
+const BUTT_TWIST_BLEND_SPEED = 5.2
+const WALK_BLEND_SPEED = 7.5
+const WALK_CYCLE_SPEED = 8.2
+const WALK_HIP_FORWARD_X = 1.05
+const WALK_SUPPORT_BACK_X = 0.18
+const WALK_KNEE_X = 1.05
+const WALK_HIP_Z = 0.12
+const WALK_BODY_SWAY_Z = 0.05
+const WALK_ARM_Z = 0.18
 
 const UPPER_BODY_POSES = {
   idle: {
@@ -255,8 +263,14 @@ const lockNpc6Feet = ({ figure }) => {
     figure,
     bones: figure.userData.bones,
   })
-  const lockedFeet = Object.entries(figure.userData.footLocks)
+  let lockedFeet = Object.entries(figure.userData.footLocks)
     .filter(([, footLock]) => footLock.enabled)
+
+  if (figure.userData.isWalking?.()) {
+    lockedFeet = lockedFeet
+      .sort(([leftKey], [rightKey]) => joints[leftKey].y - joints[rightKey].y)
+      .slice(0, 1)
+  }
   if (lockedFeet.length === 0) return
 
   const offset = lockedFeet
@@ -430,6 +444,7 @@ const attachNpc6SkeletonSync = ({ figure }) => {
       figure,
       bones: figure.userData.bones,
     })
+    figure.userData.applyLowerBodyOverlay?.(joints)
     syncTubeStickFigurePose({ figure, joints })
   }
 }
@@ -470,6 +485,37 @@ const createLowerBodyPoses = (joints) => {
       hipRightZ: 0,
       kneeRightX: 1.85,
     },
+  }
+}
+
+const addWalkToLowerBodyPose = ({ pose, walkTime, walkBlend }) => {
+  if (walkBlend <= 0) return pose
+
+  const leftSwing = Math.sin(walkTime)
+  const rightSwing = -leftSwing
+  const leftLift = Math.max(0, leftSwing)
+  const rightLift = Math.max(0, rightSwing)
+  const sway = Math.sin(walkTime * 2) * walkBlend
+
+  return {
+    ...pose,
+    hipZ: pose.hipZ + sway * WALK_BODY_SWAY_Z,
+    neckRotationZ: pose.neckRotationZ - sway * WALK_BODY_SWAY_Z,
+    // 摆动腿向前送并屈膝，支撑腿轻微后摆，形成真正的迈步而不是原地抬脚。
+    hipLeftX: (
+      pose.hipLeftX
+      - leftLift * WALK_HIP_FORWARD_X * walkBlend
+      + rightLift * WALK_SUPPORT_BACK_X * walkBlend
+    ),
+    kneeLeftX: pose.kneeLeftX + leftLift * WALK_KNEE_X * walkBlend,
+    hipLeftZ: pose.hipLeftZ + leftSwing * WALK_HIP_Z * walkBlend,
+    hipRightX: (
+      pose.hipRightX
+      - rightLift * WALK_HIP_FORWARD_X * walkBlend
+      + leftLift * WALK_SUPPORT_BACK_X * walkBlend
+    ),
+    kneeRightX: pose.kneeRightX + rightLift * WALK_KNEE_X * walkBlend,
+    hipRightZ: pose.hipRightZ + rightSwing * WALK_HIP_Z * walkBlend,
   }
 }
 
@@ -547,7 +593,11 @@ const createNpc6LowerBodyController = ({ bones, joints }) => {
     phase: 'hold',
     actionTime: 0,
     buttTwistEnabled: false,
+    buttTwistBlend: 0,
     buttTwistTime: 0,
+    walking: false,
+    walkBlend: 0,
+    walkTime: 0,
     currentBasePose: poses.stand,
     transitionFrom: poses.stand,
     transitionTo: poses.stand,
@@ -572,33 +622,52 @@ const createNpc6LowerBodyController = ({ bones, joints }) => {
   }
 
   const applyPose = (pose) => {
-    state.currentBasePose = pose
-
-    if (!state.buttTwistEnabled) {
-      applyNpc6LowerBodyPose({ bones, pose })
-      return
-    }
-
-    const sway = Math.sin(state.buttTwistTime)
-    const hipOffset = sway * BUTT_TWIST_HIP_X
-
-    // 在当前基础姿态上叠加：腰/胯左右摆，大腿跟随转向，肩膀通过 neck 反向位移保持稳定。
-    applyNpc6LowerBodyPose({
-      bones,
-      pose: {
-        ...pose,
-        rootX: pose.rootX + hipOffset,
-        hipLeftOffsetX: pose.hipLeftOffsetX - hipOffset,
-        hipRightOffsetX: pose.hipRightOffsetX - hipOffset,
-        neckX: pose.neckX - hipOffset,
-        hipLeftZ: pose.hipLeftZ + sway * BUTT_TWIST_THIGH_Z,
-        hipRightZ: pose.hipRightZ + sway * BUTT_TWIST_THIGH_Z,
-      },
+    const nextPose = addWalkToLowerBodyPose({
+      pose,
+      walkTime: state.walkTime,
+      walkBlend: state.walkBlend,
     })
+
+    state.currentBasePose = pose
+    applyNpc6LowerBodyPose({ bones, pose: nextPose })
+  }
+
+  const applyButtTwistOverlay = (joints) => {
+    if (state.buttTwistBlend <= 0) return
+
+    const hipOffset = Math.sin(state.buttTwistTime) * BUTT_TWIST_HIP_X * state.buttTwistBlend
+
+    // 只改最终绘制用的关节点，不回写骨骼，避免和脚锁互相累积误差。
+    joints.hipLeft.x += hipOffset
+    joints.hip.x += hipOffset
+    joints.hipRight.x += hipOffset
+  }
+
+  const applyLowerBodyOverlay = (joints) => {
+    applyButtTwistOverlay(joints)
   }
 
   const update = (delta) => {
-    if (state.buttTwistEnabled) state.buttTwistTime += delta * BUTT_TWIST_ACTION_SPEED
+    const targetBlend = state.buttTwistEnabled ? 1 : 0
+    const targetWalkBlend = state.walking ? 1 : 0
+
+    state.buttTwistBlend = moveValueToward({
+      current: state.buttTwistBlend,
+      target: targetBlend,
+      maxStep: BUTT_TWIST_BLEND_SPEED * delta,
+    })
+    if (state.buttTwistEnabled || state.buttTwistBlend > 0) {
+      state.buttTwistTime += delta * BUTT_TWIST_ACTION_SPEED
+    }
+    state.walkBlend = moveValueToward({
+      current: state.walkBlend,
+      target: targetWalkBlend,
+      maxStep: WALK_BLEND_SPEED * delta,
+    })
+    if (state.walking || state.walkBlend > 0) {
+      state.walkTime += delta * WALK_CYCLE_SPEED
+    }
+    state.walking = false
 
     if (state.phase === 'transition') {
       state.transitionElapsed += delta
@@ -634,6 +703,14 @@ const createNpc6LowerBodyController = ({ bones, joints }) => {
       state.buttTwistEnabled = enabled
       if (enabled) state.buttTwistTime = 0
     },
+    setWalking: (walking) => {
+      state.walking = walking
+    },
+    getWalkState: () => ({
+      walkBlend: state.walkBlend,
+      walkTime: state.walkTime,
+    }),
+    applyLowerBodyOverlay,
     update,
   }
 }
@@ -686,11 +763,38 @@ const getUpperBodyWavePose = ({ mode, waveTime }) => {
   }
 }
 
+const addWalkToArmPose = ({ pose, walkTime, walkBlend }) => {
+  if (walkBlend <= 0) return pose
+
+  const swing = Math.sin(walkTime) * WALK_ARM_Z * walkBlend
+
+  return {
+    ...pose,
+    shoulderLeftZ: pose.shoulderLeftZ - swing,
+    elbowLeftZ: pose.elbowLeftZ - swing * 0.35,
+    shoulderRightZ: pose.shoulderRightZ + swing,
+    elbowRightZ: pose.elbowRightZ + swing * 0.35,
+  }
+}
+
 const createNpc6UpperBodyController = ({ bones }) => {
   const state = {
     mode: 'idle',
     phase: 'hold',
     waveTime: 0,
+    walkBlend: 0,
+    walkTime: 0,
+  }
+
+  const applyPose = (pose) => {
+    applyNpc6ArmPose({
+      bones,
+      pose: addWalkToArmPose({
+        pose,
+        walkTime: state.walkTime,
+        walkBlend: state.walkBlend,
+      }),
+    })
   }
 
   const setMode = (mode) => {
@@ -710,9 +814,9 @@ const createNpc6UpperBodyController = ({ bones }) => {
         maxStep: UPPER_BODY_TRANSITION_SPEED * delta,
       })
 
-      applyNpc6ArmPose({ bones, pose: nextPose })
+      applyPose(nextPose)
       if (getPoseDistance({ current: nextPose, target }) <= UPPER_BODY_REACH_EPSILON) {
-        applyNpc6ArmPose({ bones, pose: target })
+        applyPose(target)
         state.phase = isUpperBodyWaveMode(state.mode) ? 'waveLoop' : 'hold'
       }
       return
@@ -720,24 +824,22 @@ const createNpc6UpperBodyController = ({ bones }) => {
 
     if (state.phase === 'waveLoop') {
       state.waveTime += delta * WAVE_LOOP_SPEED
-      applyNpc6ArmPose({
-        bones,
-        pose: getUpperBodyWavePose({
-          mode: state.mode,
-          waveTime: state.waveTime,
-        }),
-      })
+      applyPose(getUpperBodyWavePose({
+        mode: state.mode,
+        waveTime: state.waveTime,
+      }))
       return
     }
 
-    applyNpc6ArmPose({
-      bones,
-      pose: getUpperBodyTargetPose(state.mode),
-    })
+    applyPose(getUpperBodyTargetPose(state.mode))
   }
 
   return {
     setMode,
+    setWalkState: ({ walkBlend, walkTime }) => {
+      state.walkBlend = walkBlend
+      state.walkTime = walkTime
+    },
     update,
   }
 }
@@ -771,7 +873,11 @@ export const createNpc6 = ({
   const lowerBody = createNpc6LowerBodyController({ bones: skeleton.bones, joints })
   const upperBody = createNpc6UpperBodyController({ bones: skeleton.bones })
   figure.userData.updateLowerBody = lowerBody.update
-  figure.userData.updateUpperBody = upperBody.update
+  figure.userData.applyLowerBodyOverlay = lowerBody.applyLowerBodyOverlay
+  figure.userData.updateUpperBody = (delta) => {
+    upperBody.setWalkState(lowerBody.getWalkState())
+    upperBody.update(delta)
+  }
   figure.userData.setSquatPose = (enabled) => {
     lowerBody.setMode(enabled ? 'squatPose' : 'stand')
   }
@@ -784,6 +890,10 @@ export const createNpc6 = ({
   figure.userData.setControlPointsVisible = (visible) => {
     figure.userData.controlPointGroup.visible = visible
   }
+  figure.userData.setWalking = (walking) => {
+    lowerBody.setWalking(walking)
+  }
+  figure.userData.isWalking = () => lowerBody.getWalkState().walkBlend > 0
   figure.userData.setHoldHeadPose = (enabled) => {
     upperBody.setMode(enabled ? 'holdHead' : 'idle')
   }

@@ -1,5 +1,7 @@
 export const CAMERA_HEIGHT = 2.9
 export const MOVE_SPEED = 8
+export const CHARACTER_MOVE_SPEED = 2.1
+export const CHARACTER_TURN_SPEED = 5.5
 export const GROUND_SIZE = 400
 export const GROUND_REPOSITION_STEP = 40
 export const STAR_COUNT = 420
