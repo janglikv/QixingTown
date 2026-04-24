@@ -48,6 +48,12 @@ export const createEnvironment = (scene) => {
     name: 'npc6',
     position: [10.7, 2.15 / 2, -4],
   })
+  const npc6State = {
+    upperPose: 'idle',
+    squatPose: false,
+    squatAction: false,
+    waveAction: null,
+  }
   scene.add(starField, polaris, npc6)
 
   const groundTexture = createGroundTexture()
@@ -90,6 +96,44 @@ export const createEnvironment = (scene) => {
     ground.position.z = nextCellZ * GROUND_REPOSITION_STEP
   }
 
+  const setNpc6HoldHead = (enabled) => {
+    npc6State.waveAction = null
+    npc6State.upperPose = enabled ? 'holdHead' : 'idle'
+    npc6.userData.setHoldHeadPose(enabled)
+  }
+
+  const setNpc6HandRaise = (side) => {
+    const nextPose = npc6State.upperPose === side ? 'idle' : side
+
+    npc6State.waveAction = null
+    npc6State.upperPose = nextPose
+    npc6.userData.setHandRaisePose(nextPose === 'idle' ? null : nextPose)
+  }
+
+  const setNpc6SquatPose = (enabled) => {
+    if (enabled && npc6State.squatAction) {
+      npc6State.squatAction = false
+    }
+    npc6State.squatPose = enabled
+    npc6.userData.setSquatPose(enabled)
+  }
+
+  const setNpc6SquatAction = (enabled) => {
+    if (enabled && npc6State.squatPose) {
+      npc6State.squatPose = false
+    }
+    npc6State.squatAction = enabled
+    npc6.userData.setSquatAction(enabled)
+  }
+
+  const setNpc6WaveAction = (side) => {
+    const nextAction = npc6State.waveAction === side ? null : side
+
+    if (nextAction) npc6State.upperPose = 'idle'
+    npc6State.waveAction = nextAction
+    npc6.userData.setWaveAction(nextAction)
+  }
+
   const dispose = () => {
     scene.remove(
       ambientLight,
@@ -116,6 +160,12 @@ export const createEnvironment = (scene) => {
   }
 
   return {
+    npc6State,
+    setNpc6HoldHead,
+    setNpc6HandRaise,
+    setNpc6SquatPose,
+    setNpc6SquatAction,
+    setNpc6WaveAction,
     update,
     updateGroundPosition,
     dispose,

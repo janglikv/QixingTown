@@ -1,5 +1,6 @@
 import { Clock, PerspectiveCamera, Scene, SRGBColorSpace, WebGLRenderer } from 'three'
 import { CAMERA_HEIGHT, WORLD_TUNING } from '../config.js'
+import { createActionWheel } from './actionWheel.js'
 import { createEnvironment } from './environment.js'
 import { createPlayerController } from './playerController.js'
 
@@ -87,6 +88,66 @@ export const createSceneApp = (app) => {
     camera,
     domElement: renderer.domElement,
   })
+  const actionWheel = createActionWheel({
+    scene,
+    camera,
+    domElement: renderer.domElement,
+    actions: [
+      {
+        label: '蹲下',
+        isActive: () => environment.npc6State.squatPose,
+        toggle: () => environment.setNpc6SquatPose(!environment.npc6State.squatPose),
+      },
+      {
+        label: '[动]下蹲',
+        isActive: () => environment.npc6State.squatAction,
+        toggle: () => environment.setNpc6SquatAction(!environment.npc6State.squatAction),
+      },
+      {
+        label: '抱头',
+        isActive: () => environment.npc6State.upperPose === 'holdHead',
+        toggle: () => environment.setNpc6HoldHead(environment.npc6State.upperPose !== 'holdHead'),
+      },
+      {
+        label: '举手-左',
+        isActive: () => environment.npc6State.upperPose === 'left',
+        toggle: () => environment.setNpc6HandRaise('left'),
+      },
+      {
+        label: '举手-右',
+        isActive: () => environment.npc6State.upperPose === 'right',
+        toggle: () => environment.setNpc6HandRaise('right'),
+      },
+      {
+        label: '举手-双手',
+        isActive: () => environment.npc6State.upperPose === 'both',
+        toggle: () => environment.setNpc6HandRaise('both'),
+      },
+      {
+        label: '[动]挥左',
+        isActive: () => environment.npc6State.waveAction === 'left',
+        toggle: () => environment.setNpc6WaveAction('left'),
+      },
+      {
+        label: '[动]挥右',
+        isActive: () => environment.npc6State.waveAction === 'right',
+        toggle: () => environment.setNpc6WaveAction('right'),
+      },
+      {
+        label: '[动]双挥对称',
+        isActive: () => environment.npc6State.waveAction === 'bothSame',
+        toggle: () => environment.setNpc6WaveAction('bothSame'),
+      },
+      {
+        label: '[动]双挥同',
+        isActive: () => environment.npc6State.waveAction === 'bothMirror',
+        toggle: () => environment.setNpc6WaveAction('bothMirror'),
+      },
+    ],
+    onOpenChange: (open) => {
+      player.controls.enabled = !open
+    },
+  })
   const clock = new Clock()
   let lastCameraStateSignature = getCameraStateSignature(camera)
   let lastCameraStateSavedAt = 0
@@ -109,8 +170,29 @@ export const createSceneApp = (app) => {
     renderer.setSize(window.innerWidth, window.innerHeight)
   }
 
+  const onKeyDown = (event) => {
+    if (event.repeat) return
+
+    if (event.code === 'KeyG') {
+      event.preventDefault()
+      actionWheel.open()
+    }
+    if (event.code === 'Escape') {
+      actionWheel.close()
+    }
+  }
+
+  const onKeyUp = (event) => {
+    if (event.code !== 'KeyG') return
+
+    event.preventDefault()
+    actionWheel.close({ applySelection: true })
+  }
+
   window.addEventListener('resize', onResize)
   window.addEventListener('beforeunload', persistCameraStateOnUnload)
+  window.addEventListener('keydown', onKeyDown)
+  window.addEventListener('keyup', onKeyUp)
 
   let animationFrameId = 0
 
@@ -119,6 +201,7 @@ export const createSceneApp = (app) => {
 
     player.update(delta)
     environment.update(delta)
+    actionWheel.update()
     environment.updateGroundPosition(camera.position)
     const now = window.performance.now()
     if (now - lastCameraStateSavedAt >= CAMERA_STATE_SAVE_INTERVAL) {
@@ -137,7 +220,10 @@ export const createSceneApp = (app) => {
     window.cancelAnimationFrame(animationFrameId)
     window.removeEventListener('resize', onResize)
     window.removeEventListener('beforeunload', persistCameraStateOnUnload)
+    window.removeEventListener('keydown', onKeyDown)
+    window.removeEventListener('keyup', onKeyUp)
     persistCameraStateOnUnload()
+    actionWheel.dispose()
     player.dispose()
     environment.dispose()
     renderer.dispose()
