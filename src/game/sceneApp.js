@@ -215,7 +215,24 @@ export const createSceneApp = (app) => {
     renderer.setSize(window.innerWidth, window.innerHeight)
   }
 
+  const locomotionInput = {
+    forward: false,
+  }
+
+  const syncNpc6LocomotionInput = () => {
+    environment.setNpc6LocomotionInput(locomotionInput)
+  }
+
   const onKeyDown = (event) => {
+    if (event.code === 'KeyW' && !event.altKey) {
+      locomotionInput.forward = true
+      syncNpc6LocomotionInput()
+    }
+    if (event.code === 'AltLeft' || event.code === 'AltRight') {
+      locomotionInput.forward = false
+      syncNpc6LocomotionInput()
+    }
+
     if (event.repeat) return
 
     if (event.code === 'KeyG') {
@@ -228,6 +245,11 @@ export const createSceneApp = (app) => {
   }
 
   const onKeyUp = (event) => {
+    if (event.code === 'KeyW') {
+      locomotionInput.forward = false
+      syncNpc6LocomotionInput()
+    }
+
     if (event.code !== 'KeyG') return
 
     event.preventDefault()

@@ -28,12 +28,20 @@ export const createPlayerController = ({ camera, domElement }) => {
     movement.right = false
   }
 
+  const isCameraMoveKey = (code) => (
+    code === 'KeyW'
+    || code === 'KeyS'
+    || code === 'KeyA'
+    || code === 'KeyD'
+  )
+
   const lockOnClick = () => {
     if (!controls.isLocked) controls.lock()
   }
 
   const handleKeyDown = (event) => {
     if (!controls.isLocked) return
+    if (isCameraMoveKey(event.code) && !event.altKey) return
 
     switch (event.code) {
       case 'KeyW':
@@ -54,6 +62,11 @@ export const createPlayerController = ({ camera, domElement }) => {
   }
 
   const handleKeyUp = (event) => {
+    if (event.code === 'AltLeft' || event.code === 'AltRight') {
+      resetMovement()
+      return
+    }
+
     switch (event.code) {
       case 'KeyW':
         movement.forward = false

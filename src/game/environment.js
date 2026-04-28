@@ -111,6 +111,10 @@ export const createEnvironment = (scene) => {
     npc6.userData.cancelUserAction()
   }
 
+  const setNpc6LocomotionInput = (input) => {
+    npc6.userData.setLocomotionInput(input)
+  }
+
   const dispose = () => {
     scene.remove(
       ambientLight,
@@ -142,6 +146,7 @@ export const createEnvironment = (scene) => {
     playNpc6UserAction,
     previewNpc6UserAction,
     cancelNpc6UserAction,
+    setNpc6LocomotionInput,
     update,
     updateGroundPosition,
     dispose,

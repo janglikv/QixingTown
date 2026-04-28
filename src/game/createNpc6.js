@@ -25,6 +25,29 @@ const HEAD_EYES_YAW = -Math.PI / 2
 const FOOT_LOCK_HEIGHT_EPSILON = 0.001
 const USER_ACTION_TRANSITION_DURATION = 0.45
 const DEG_TO_RAD = Math.PI / 180
+const WALK_FORWARD_TILT = 0.16
+const WALK_TILT_SPEED = 5
+const WALK_STEP_DURATION = 0.56
+const WALK_RECOVER_DURATION = 0.42
+const WALK_SUPPORT_MARGIN = 0.035
+const WALK_STEP_EXTRA_DISTANCE = 0.18
+const WALK_MIN_STEP_DISTANCE = 0.18
+const WALK_MAX_STEP_DISTANCE = 0.46
+const WALK_CONTINUOUS_STEP_DISTANCE = 0.3
+const WALK_STEP_HEIGHT = 0.16
+const WALK_STANCE_DEPTH = 0.2
+const NPC6_COM_SEGMENTS = [
+  { start: 'hip', end: 'neck', mass: 10 },
+  { start: 'neck', end: 'head', mass: 3 },
+  { start: 'shoulderLeft', end: 'elbowLeft', mass: 1.2 },
+  { start: 'elbowLeft', end: 'handLeft', mass: 0.9 },
+  { start: 'shoulderRight', end: 'elbowRight', mass: 1.2 },
+  { start: 'elbowRight', end: 'handRight', mass: 0.9 },
+  { start: 'hipLeft', end: 'kneeLeft', mass: 2.4 },
+  { start: 'kneeLeft', end: 'footLeft', mass: 1.7 },
+  { start: 'hipRight', end: 'kneeRight', mass: 2.4 },
+  { start: 'kneeRight', end: 'footRight', mass: 1.7 },
+]
 
 export const NPC6_PROPORTIONS = {
   // 脚底高度，调大/调小会整体改变脚在模型局部坐标里的高度。
@@ -211,23 +234,48 @@ const readSkeletonJointPositions = ({ figure, bones }) => {
   return joints
 }
 
+const getBoneWorldPosition = (bone) => bone.getWorldPosition(new Vector3())
+
+const worldToFigureLocal = (figure, position) => figure.worldToLocal(position.clone())
+
+const localJointsToWorldJoints = ({ figure, joints }) => (
+  Object.fromEntries(
+    Object.entries(joints).map(([key, position]) => [
+      key,
+      figure.localToWorld(position.clone()),
+    ]),
+  )
+)
+
 const lockNpc6Feet = ({ figure }) => {
-  const joints = readSkeletonJointPositions({
-    figure,
-    bones: figure.userData.bones,
-  })
   const footEntries = Object.entries(figure.userData.footLocks)
-  const lowestY = Math.min(...footEntries.map(([key]) => joints[key].y))
-  const lockedFeet = footEntries.filter(([key]) => (
-    joints[key].y <= lowestY + FOOT_LOCK_HEIGHT_EPSILON
-  ))
+  const lockedFootKeys = figure.userData.lockedFootKeys
+  const lockedFeet = lockedFootKeys?.length
+    ? footEntries.filter(([key]) => lockedFootKeys.includes(key))
+    : (() => {
+      const joints = readSkeletonJointPositions({
+        figure,
+        bones: figure.userData.bones,
+      })
+      const lowestY = Math.min(...footEntries.map(([key]) => joints[key].y))
+
+      return footEntries.filter(([key]) => (
+        joints[key].y <= lowestY + FOOT_LOCK_HEIGHT_EPSILON
+      ))
+    })()
 
   const offset = lockedFeet
-    .reduce((sum, [key, footLock]) => sum.add(footLock.target.clone().sub(joints[key])), new Vector3())
+    .reduce((sum, [key, footLock]) => (
+      sum.add(footLock.worldTarget.clone().sub(getBoneWorldPosition(figure.userData.bones[key])))
+    ), new Vector3())
     .multiplyScalar(1 / lockedFeet.length)
 
-  // 只锁当前最低脚；两脚高度接近时才双脚平均，避免抬脚时根节点被拉向双脚中点。
-  figure.userData.skeletonRoot.position.add(offset)
+  // 步态控制会明确指定支撑脚；非步态状态才按最低脚回退锁定。
+  figure.userData.skeletonRoot.position.add(
+    figure.userData.skeletonRoot.parent.worldToLocal(
+      figure.userData.skeletonRoot.parent.localToWorld(new Vector3()).add(offset),
+    ),
+  )
 }
 
 const createTubeGeometry = ({ keys, joints }) => {
@@ -389,6 +437,7 @@ const attachNpc6SkeletonSync = ({ figure }) => {
   figure.userData.update = (delta) => {
     figure.userData.updateLowerBody?.(delta)
     figure.userData.updateUserAction?.(delta)
+    figure.userData.updateLocomotion?.(delta)
     lockNpc6Feet({ figure })
 
     const joints = readSkeletonJointPositions({
@@ -403,15 +452,22 @@ const createLowerBodyPoses = (joints) => {
   const neckOffset = joints.neck.clone().sub(joints.hip)
   const hipLeftOffset = joints.hipLeft.clone().sub(joints.hip)
   const hipRightOffset = joints.hipRight.clone().sub(joints.hip)
+  const kneeLeftOffset = joints.kneeLeft.clone().sub(joints.hipLeft)
+  const kneeRightOffset = joints.kneeRight.clone().sub(joints.hipRight)
+  const footLeftOffset = joints.footLeft.clone().sub(joints.kneeLeft)
+  const footRightOffset = joints.footRight.clone().sub(joints.kneeRight)
 
   return {
     stand: {
       rootX: joints.hip.x,
       hipZ: 0,
-      hipLeftOffsetX: hipLeftOffset.x,
-      hipRightOffsetX: hipRightOffset.x,
-      neckX: neckOffset.x,
-      neckZ: neckOffset.z,
+      hipLeftOffset,
+      hipRightOffset,
+      kneeLeftOffset,
+      kneeRightOffset,
+      footLeftOffset,
+      footRightOffset,
+      neckOffset,
       neckRotationZ: 0,
       hipLeftX: 0,
       hipLeftZ: 0,
@@ -429,13 +485,38 @@ const smoothStep = (value) => {
   return amount * amount * (3 - 2 * amount)
 }
 
+const approachValue = (current, target, step) => {
+  if (current < target) return Math.min(current + step, target)
+  if (current > target) return Math.max(current - step, target)
+
+  return target
+}
+
+const clampValue = (value, min, max) => Math.min(Math.max(value, min), max)
+
+const estimateNpc6CenterOfMass = (joints) => {
+  const center = new Vector3()
+  let totalMass = 0
+
+  NPC6_COM_SEGMENTS.forEach(({ start, end, mass }) => {
+    const segmentCenter = joints[start].clone().add(joints[end]).multiplyScalar(0.5)
+    center.add(segmentCenter.multiplyScalar(mass))
+    totalMass += mass
+  })
+
+  return center.multiplyScalar(1 / totalMass)
+}
+
 const applyNpc6LowerBodyPose = ({ bones, pose }) => {
   bones.hip.position.x = pose.rootX
   bones.hip.rotation.z = pose.hipZ
-  bones.hipLeft.position.x = pose.hipLeftOffsetX
-  bones.hipRight.position.x = pose.hipRightOffsetX
-  bones.neck.position.x = pose.neckX
-  bones.neck.position.z = pose.neckZ
+  bones.hipLeft.position.copy(pose.hipLeftOffset)
+  bones.hipRight.position.copy(pose.hipRightOffset)
+  bones.kneeLeft.position.copy(pose.kneeLeftOffset)
+  bones.kneeRight.position.copy(pose.kneeRightOffset)
+  bones.footLeft.position.copy(pose.footLeftOffset)
+  bones.footRight.position.copy(pose.footRightOffset)
+  bones.neck.position.copy(pose.neckOffset)
   bones.neck.rotation.z = pose.neckRotationZ
   bones.hipLeft.rotation.x = pose.hipLeftX
   bones.hipLeft.rotation.z = pose.hipLeftZ
@@ -473,6 +554,264 @@ const createNpc6LowerBodyController = ({ bones, joints }) => {
   }
 
   return {
+    update,
+  }
+}
+
+const solveTwoBoneLegIk = ({ hip, footTarget, upperLength, lowerLength, bendDirection }) => {
+  const hipToFoot = footTarget.clone().sub(hip)
+  const distance = clampValue(
+    hipToFoot.length(),
+    Math.abs(upperLength - lowerLength) + 0.001,
+    upperLength + lowerLength - 0.001,
+  )
+  const forward = hipToFoot.normalize()
+  const foot = hip.clone().add(forward.clone().multiplyScalar(distance))
+  const along = (
+    (upperLength * upperLength)
+    - (lowerLength * lowerLength)
+    + (distance * distance)
+  ) / (2 * distance)
+  const height = Math.sqrt(Math.max(upperLength * upperLength - along * along, 0))
+  const bend = bendDirection.clone().projectOnPlane(forward)
+
+  if (bend.lengthSq() === 0) bend.set(0, 1, 0).projectOnPlane(forward)
+  bend.normalize()
+
+  return {
+    foot,
+    knee: hip
+      .clone()
+      .add(forward.multiplyScalar(along))
+      .add(bend.multiplyScalar(height)),
+  }
+}
+
+const applyNpc6LegIk = ({ figure, bones, side, footTarget }) => {
+  const hipKey = side === 'left' ? 'hipLeft' : 'hipRight'
+  const kneeKey = side === 'left' ? 'kneeLeft' : 'kneeRight'
+  const footKey = side === 'left' ? 'footLeft' : 'footRight'
+  const upperLength = bones[kneeKey].position.length()
+  const lowerLength = bones[footKey].position.length()
+
+  bones[hipKey].rotation.set(0, 0, 0)
+  bones[kneeKey].rotation.set(0, 0, 0)
+  figure.updateMatrixWorld(true)
+
+  const hip = figure.worldToLocal(bones[hipKey].getWorldPosition(new Vector3()))
+  const solution = solveTwoBoneLegIk({
+    hip,
+    footTarget,
+    upperLength,
+    lowerLength,
+    bendDirection: new Vector3(0, 0, 1),
+  })
+
+  bones[kneeKey].position.copy(
+    bones[hipKey].worldToLocal(figure.localToWorld(solution.knee.clone())),
+  )
+  figure.updateMatrixWorld(true)
+  bones[footKey].position.copy(
+    bones[kneeKey].worldToLocal(figure.localToWorld(solution.foot.clone())),
+  )
+}
+
+const applyNpc6LegIkWorld = ({ figure, bones, side, footWorldTarget }) => {
+  applyNpc6LegIk({
+    figure,
+    bones,
+    side,
+    footTarget: worldToFigureLocal(figure, footWorldTarget),
+  })
+}
+
+const getFootKeyForSide = (side) => (side === 'left' ? 'footLeft' : 'footRight')
+
+const getOppositeSide = (side) => (side === 'left' ? 'right' : 'left')
+
+const getSideForFootKey = (key) => (key === 'footLeft' ? 'left' : 'right')
+
+const createNpc6LocomotionController = ({ figure, bones }) => {
+  const input = {
+    forward: false,
+  }
+  const state = {
+    phase: 'idle',
+    tilt: 0,
+    phaseElapsed: 0,
+    swingSide: 'right',
+    supportSide: 'left',
+    stepStartRootZ: bones.hip.position.z,
+    stepDistance: 0,
+    swingStartFoot: new Vector3(),
+    swingTargetFoot: new Vector3(),
+  }
+
+  const isBusy = () => state.phase !== 'idle'
+
+  const setLockedFeet = (keys) => {
+    figure.userData.lockedFootKeys = keys
+  }
+
+  const applyFootLocksIk = () => {
+    Object.entries(figure.userData.footLocks).forEach(([key, footLock]) => {
+      applyNpc6LegIkWorld({
+        figure,
+        bones,
+        side: getSideForFootKey(key),
+        footWorldTarget: footLock.worldTarget,
+      })
+    })
+  }
+
+  const getBalanceCorrectionStep = () => {
+    applyFootLocksIk()
+    const joints = readSkeletonJointPositions({ figure, bones })
+    const worldJoints = localJointsToWorldJoints({ figure, joints })
+    const centerOfMass = estimateNpc6CenterOfMass(worldJoints)
+    const supportFrontZ = Math.max(worldJoints.footLeft.z, worldJoints.footRight.z) + WALK_SUPPORT_MARGIN
+    const overflow = centerOfMass.z - supportFrontZ
+
+    if (overflow <= 0) return null
+
+    const swingSide = worldJoints.footLeft.z < worldJoints.footRight.z ? 'left' : 'right'
+
+    return {
+      swingSide,
+      distance: clampValue(
+        overflow + WALK_STEP_EXTRA_DISTANCE,
+        WALK_MIN_STEP_DISTANCE,
+        WALK_MAX_STEP_DISTANCE,
+      ),
+    }
+  }
+
+  const startStepOut = ({ swingSide, distance }) => {
+    const footKey = getFootKeyForSide(swingSide)
+    const supportSide = getOppositeSide(swingSide)
+    const supportFootKey = getFootKeyForSide(supportSide)
+    const swingFootWorld = getBoneWorldPosition(bones[footKey])
+    const supportFootWorld = getBoneWorldPosition(bones[supportFootKey])
+
+    state.phase = 'stepOut'
+    state.phaseElapsed = 0
+    state.stepStartRootZ = bones.hip.position.z
+    state.swingSide = swingSide
+    state.supportSide = supportSide
+    state.stepDistance = distance
+    state.swingStartFoot.copy(swingFootWorld)
+    state.swingTargetFoot.copy(swingFootWorld)
+    state.swingTargetFoot.z += distance
+    figure.userData.footLocks[supportFootKey].worldTarget.copy(supportFootWorld)
+    setLockedFeet([supportFootKey])
+  }
+
+  const startContinuousStep = () => {
+    const locks = figure.userData.footLocks
+    const swingSide = locks.footLeft.worldTarget.z < locks.footRight.worldTarget.z ? 'left' : 'right'
+
+    startStepOut({
+      swingSide,
+      distance: WALK_CONTINUOUS_STEP_DISTANCE,
+    })
+  }
+
+  const startRecover = () => {
+    const swingFootKey = getFootKeyForSide(state.swingSide)
+    const recoverSide = state.supportSide
+    const recoverFootKey = getFootKeyForSide(recoverSide)
+    const supportTarget = figure.userData.footLocks[swingFootKey].worldTarget
+    const recoverFootWorld = getBoneWorldPosition(bones[recoverFootKey])
+
+    state.phase = 'recover'
+    state.phaseElapsed = 0
+    state.stepStartRootZ = bones.hip.position.z
+    state.stepDistance = 0
+    state.swingSide = recoverSide
+    state.supportSide = getOppositeSide(recoverSide)
+    state.swingStartFoot.copy(recoverFootWorld)
+    state.swingTargetFoot.copy(recoverFootWorld)
+    state.swingTargetFoot.y = supportTarget.y
+    state.swingTargetFoot.z = supportTarget.z - WALK_STANCE_DEPTH
+    setLockedFeet([swingFootKey])
+  }
+
+  const finishRecover = () => {
+    const recoveredFootKey = getFootKeyForSide(state.swingSide)
+
+    figure.userData.footLocks[recoveredFootKey].worldTarget.copy(state.swingTargetFoot)
+    state.phase = 'idle'
+    state.phaseElapsed = 0
+    setLockedFeet(['footLeft', 'footRight'])
+    applyFootLocksIk()
+    if (input.forward) startContinuousStep()
+  }
+
+  const updateSwingLeg = (progress) => {
+    const lift = Math.sin(progress * Math.PI)
+    const travel = smoothStep(progress)
+    const footTarget = state.swingStartFoot.clone().lerp(state.swingTargetFoot, travel)
+
+    footTarget.y += WALK_STEP_HEIGHT * lift
+    bones.hip.position.z = state.stepStartRootZ + state.stepDistance * travel
+    applyNpc6LegIkWorld({
+      figure,
+      bones,
+      side: state.swingSide,
+      footWorldTarget: footTarget,
+    })
+    applyNpc6LegIkWorld({
+      figure,
+      bones,
+      side: getOppositeSide(state.swingSide),
+      footWorldTarget: figure.userData.footLocks[getFootKeyForSide(getOppositeSide(state.swingSide))].worldTarget,
+    })
+
+    if (progress < 1) return
+
+    if (state.phase === 'stepOut') {
+      const swingFootKey = getFootKeyForSide(state.swingSide)
+
+      figure.userData.footLocks[swingFootKey].worldTarget.copy(state.swingTargetFoot)
+      startRecover()
+    } else {
+      finishRecover()
+    }
+  }
+
+  const update = (delta) => {
+    const targetTilt = input.forward ? WALK_FORWARD_TILT : 0
+    state.tilt = approachValue(
+      state.tilt,
+      targetTilt,
+      WALK_TILT_SPEED * delta * Math.abs(WALK_FORWARD_TILT),
+    )
+
+    bones.hip.rotation.x = state.tilt
+
+    const correctionStep = !isBusy() && input.forward ? getBalanceCorrectionStep() : null
+    if (correctionStep) {
+      startStepOut(correctionStep)
+    }
+
+    if (!isBusy()) {
+      applyFootLocksIk()
+      return
+    }
+
+    const duration = state.phase === 'stepOut' ? WALK_STEP_DURATION : WALK_RECOVER_DURATION
+
+    state.phaseElapsed = Math.min(state.phaseElapsed + delta, duration)
+    updateSwingLeg(state.phaseElapsed / duration)
+  }
+
+  const setInput = (nextInput) => {
+    input.forward = Boolean(nextInput.forward)
+    if (!input.forward && !isBusy()) setLockedFeet(['footLeft', 'footRight'])
+  }
+
+  return {
+    setInput,
     update,
   }
 }
@@ -595,13 +934,17 @@ export const createNpc6 = ({
   figure.userData.proportions = proportions
   figure.userData.skeletonRoot = skeleton.root
   figure.userData.bones = skeleton.bones
+  figure.updateMatrixWorld(true)
   figure.userData.footLocks = {
-    footLeft: { target: joints.footLeft.clone() },
-    footRight: { target: joints.footRight.clone() },
+    footLeft: { worldTarget: figure.localToWorld(joints.footLeft.clone()) },
+    footRight: { worldTarget: figure.localToWorld(joints.footRight.clone()) },
   }
+  figure.userData.lockedFootKeys = ['footLeft', 'footRight']
   const lowerBody = createNpc6LowerBodyController({ bones: skeleton.bones, joints })
+  const locomotion = createNpc6LocomotionController({ figure, bones: skeleton.bones })
   const userAction = createNpc6UserActionController({ bones: skeleton.bones })
   figure.userData.updateLowerBody = lowerBody.update
+  figure.userData.updateLocomotion = locomotion.update
   figure.userData.updateUserAction = userAction.update
   figure.userData.setControlPointsVisible = (visible) => {
     figure.userData.controlPointGroup.visible = visible
@@ -614,6 +957,9 @@ export const createNpc6 = ({
   }
   figure.userData.cancelUserAction = () => {
     userAction.cancel()
+  }
+  figure.userData.setLocomotionInput = (input) => {
+    locomotion.setInput(input)
   }
   figure.userData.syncPose = () => {
     syncTubeStickFigurePose({
