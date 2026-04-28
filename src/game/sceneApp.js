@@ -1,4 +1,4 @@
-import { Clock, PerspectiveCamera, Scene, SRGBColorSpace, WebGLRenderer } from 'three'
+import { PerspectiveCamera, Scene, SRGBColorSpace, Timer, WebGLRenderer } from 'three'
 import { CAMERA_HEIGHT, WORLD_TUNING } from '../config.js'
 import { createActionWheel } from './actionWheel.js'
 import { createEnvironment } from './environment.js'
@@ -185,11 +185,6 @@ export const createSceneApp = (app) => {
         toggle: () => environment.setNpc6SquatAction(!environment.npc6State.squatAction),
       },
       {
-        label: '[动]扭屁股',
-        isActive: () => environment.npc6State.buttTwistAction,
-        toggle: () => environment.setNpc6ButtTwistAction(!environment.npc6State.buttTwistAction),
-      },
-      {
         label: '抱头',
         isActive: () => environment.npc6State.upperPose === 'holdHead',
         toggle: () => environment.setNpc6HoldHead(environment.npc6State.upperPose !== 'holdHead'),
@@ -234,7 +229,8 @@ export const createSceneApp = (app) => {
       player.controls.enabled = !open
     },
   })
-  const clock = new Clock()
+  const timer = new Timer()
+  timer.connect(document)
   let lastCameraStateSignature = getCameraStateSignature(camera)
   let lastCameraStateSavedAt = 0
 
@@ -282,8 +278,9 @@ export const createSceneApp = (app) => {
 
   let animationFrameId = 0
 
-  const renderFrame = () => {
-    const delta = clock.getDelta()
+  const renderFrame = (timestamp) => {
+    timer.update(timestamp)
+    const delta = timer.getDelta()
 
     player.update(delta)
     controlPointToggle.syncCursorVisible(!player.controls.isLocked)
@@ -314,6 +311,7 @@ export const createSceneApp = (app) => {
     actionWheel.dispose()
     player.dispose()
     environment.dispose()
+    timer.dispose()
     renderer.dispose()
   }
 
