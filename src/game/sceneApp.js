@@ -1,5 +1,6 @@
 import { PerspectiveCamera, Scene, SRGBColorSpace, Timer, WebGLRenderer } from 'three'
 import { CAMERA_HEIGHT, WORLD_TUNING } from '../config.js'
+import { createActionSettingsPanel, readUserActions } from './actionSettingsPanel.js'
 import { createActionWheel } from './actionWheel.js'
 import { createEnvironment } from './environment.js'
 import { createPlayerController } from './playerController.js'
@@ -84,7 +85,7 @@ const createControlPointToggle = ({ app, initialVisible, onChange }) => {
   text.textContent = '控制点'
   Object.assign(label.style, {
     position: 'absolute',
-    right: '14px',
+    right: '6px',
     top: '14px',
     zIndex: '10',
     display: 'none',
@@ -169,66 +170,28 @@ export const createSceneApp = (app) => {
       writeControlPointsVisible(visible)
     },
   })
-  const actionWheel = createActionWheel({
+  const actionSettingsPanel = createActionSettingsPanel({ app })
+  const createUserActionWheelActions = () => readUserActions().map((action) => ({
+    label: action.label,
+    isActive: () => environment.npc6State.userActionId === action.id,
+    toggle: () => {
+      if (environment.npc6State.userActionId === action.id) {
+        environment.cancelNpc6UserAction()
+      } else {
+        environment.playNpc6UserAction(action)
+      }
+    },
+  }))
+  const createNpc6ActionWheel = () => createActionWheel({
     scene,
     camera,
     domElement: renderer.domElement,
-    actions: [
-      {
-        label: '蹲下',
-        isActive: () => environment.npc6State.squatPose,
-        toggle: () => environment.setNpc6SquatPose(!environment.npc6State.squatPose),
-      },
-      {
-        label: '[动]下蹲',
-        isActive: () => environment.npc6State.squatAction,
-        toggle: () => environment.setNpc6SquatAction(!environment.npc6State.squatAction),
-      },
-      {
-        label: '抱头',
-        isActive: () => environment.npc6State.upperPose === 'holdHead',
-        toggle: () => environment.setNpc6HoldHead(environment.npc6State.upperPose !== 'holdHead'),
-      },
-      {
-        label: '举手-左',
-        isActive: () => environment.npc6State.upperPose === 'left',
-        toggle: () => environment.setNpc6HandRaise('left'),
-      },
-      {
-        label: '举手-右',
-        isActive: () => environment.npc6State.upperPose === 'right',
-        toggle: () => environment.setNpc6HandRaise('right'),
-      },
-      {
-        label: '举手-双手',
-        isActive: () => environment.npc6State.upperPose === 'both',
-        toggle: () => environment.setNpc6HandRaise('both'),
-      },
-      {
-        label: '[动]挥左',
-        isActive: () => environment.npc6State.waveAction === 'left',
-        toggle: () => environment.setNpc6WaveAction('left'),
-      },
-      {
-        label: '[动]挥右',
-        isActive: () => environment.npc6State.waveAction === 'right',
-        toggle: () => environment.setNpc6WaveAction('right'),
-      },
-      {
-        label: '[动]双挥对称',
-        isActive: () => environment.npc6State.waveAction === 'bothSame',
-        toggle: () => environment.setNpc6WaveAction('bothSame'),
-      },
-      {
-        label: '[动]双挥同',
-        isActive: () => environment.npc6State.waveAction === 'bothMirror',
-        toggle: () => environment.setNpc6WaveAction('bothMirror'),
-      },
-    ],
+    actions: createUserActionWheelActions(),
     onOpenChange: (open) => {
       player.controls.enabled = !open
     },
   })
+  let actionWheel = createNpc6ActionWheel()
   const timer = new Timer()
   timer.connect(document)
   let lastCameraStateSignature = getCameraStateSignature(camera)
@@ -271,10 +234,32 @@ export const createSceneApp = (app) => {
     actionWheel.close({ applySelection: true })
   }
 
+  const onPlayUserAction = (event) => {
+    if (event.detail.preview) {
+      environment.previewNpc6UserAction(event.detail.action)
+    } else {
+      environment.playNpc6UserAction(event.detail.action)
+    }
+  }
+
+  const rebuildActionWheel = () => {
+    if (
+      environment.npc6State.userActionId
+      && !readUserActions().some((action) => action.id === environment.npc6State.userActionId)
+    ) {
+      environment.cancelNpc6UserAction()
+    }
+    actionWheel.close()
+    actionWheel.dispose()
+    actionWheel = createNpc6ActionWheel()
+  }
+
   window.addEventListener('resize', onResize)
   window.addEventListener('beforeunload', persistCameraStateOnUnload)
   window.addEventListener('keydown', onKeyDown)
   window.addEventListener('keyup', onKeyUp)
+  app.addEventListener('qixing-town:play-action', onPlayUserAction)
+  app.addEventListener('qixing-town:user-actions-changed', rebuildActionWheel)
 
   let animationFrameId = 0
 
@@ -283,7 +268,9 @@ export const createSceneApp = (app) => {
     const delta = timer.getDelta()
 
     player.update(delta)
-    controlPointToggle.syncCursorVisible(!player.controls.isLocked)
+    const cursorVisible = !player.controls.isLocked
+    controlPointToggle.syncCursorVisible(cursorVisible)
+    actionSettingsPanel.syncCursorVisible(cursorVisible)
     environment.update(delta)
     actionWheel.update()
     environment.updateGroundPosition(camera.position)
@@ -306,8 +293,11 @@ export const createSceneApp = (app) => {
     window.removeEventListener('beforeunload', persistCameraStateOnUnload)
     window.removeEventListener('keydown', onKeyDown)
     window.removeEventListener('keyup', onKeyUp)
+    app.removeEventListener('qixing-town:play-action', onPlayUserAction)
+    app.removeEventListener('qixing-town:user-actions-changed', rebuildActionWheel)
     persistCameraStateOnUnload()
     controlPointToggle.dispose()
+    actionSettingsPanel.dispose()
     actionWheel.dispose()
     player.dispose()
     environment.dispose()

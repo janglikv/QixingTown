@@ -49,10 +49,7 @@ export const createEnvironment = (scene) => {
     position: [10.7, 2.15 / 2, -4],
   })
   const npc6State = {
-    upperPose: 'idle',
-    squatPose: false,
-    squatAction: false,
-    waveAction: null,
+    userActionId: null,
   }
   scene.add(starField, polaris, npc6)
 
@@ -96,46 +93,22 @@ export const createEnvironment = (scene) => {
     ground.position.z = nextCellZ * GROUND_REPOSITION_STEP
   }
 
-  const setNpc6HoldHead = (enabled) => {
-    npc6State.waveAction = null
-    npc6State.upperPose = enabled ? 'holdHead' : 'idle'
-    npc6.userData.setHoldHeadPose(enabled)
-  }
-
-  const setNpc6HandRaise = (side) => {
-    const nextPose = npc6State.upperPose === side ? 'idle' : side
-
-    npc6State.waveAction = null
-    npc6State.upperPose = nextPose
-    npc6.userData.setHandRaisePose(nextPose === 'idle' ? null : nextPose)
-  }
-
-  const setNpc6SquatPose = (enabled) => {
-    if (enabled && npc6State.squatAction) {
-      npc6State.squatAction = false
-    }
-    npc6State.squatPose = enabled
-    npc6.userData.setSquatPose(enabled)
-  }
-
-  const setNpc6SquatAction = (enabled) => {
-    if (enabled && npc6State.squatPose) {
-      npc6State.squatPose = false
-    }
-    npc6State.squatAction = enabled
-    npc6.userData.setSquatAction(enabled)
-  }
-
   const setNpc6ControlPointsVisible = (visible) => {
     npc6.userData.setControlPointsVisible(visible)
   }
 
-  const setNpc6WaveAction = (side) => {
-    const nextAction = npc6State.waveAction === side ? null : side
+  const playNpc6UserAction = (action) => {
+    npc6State.userActionId = action.id
+    npc6.userData.playUserAction(action)
+  }
 
-    if (nextAction) npc6State.upperPose = 'idle'
-    npc6State.waveAction = nextAction
-    npc6.userData.setWaveAction(nextAction)
+  const previewNpc6UserAction = (action) => {
+    npc6.userData.previewUserAction(action)
+  }
+
+  const cancelNpc6UserAction = () => {
+    npc6State.userActionId = null
+    npc6.userData.cancelUserAction()
   }
 
   const dispose = () => {
@@ -165,12 +138,10 @@ export const createEnvironment = (scene) => {
 
   return {
     npc6State,
-    setNpc6HoldHead,
-    setNpc6HandRaise,
-    setNpc6SquatPose,
-    setNpc6SquatAction,
     setNpc6ControlPointsVisible,
-    setNpc6WaveAction,
+    playNpc6UserAction,
+    previewNpc6UserAction,
+    cancelNpc6UserAction,
     update,
     updateGroundPosition,
     dispose,

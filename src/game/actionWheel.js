@@ -179,7 +179,7 @@ export const createActionWheel = ({ scene, camera, domElement, actions, onOpenCh
   }
 
   const handleMouseMove = (event) => {
-    if (!isOpen) return
+    if (!isOpen || actions.length === 0) return
 
     pointerPosition.x += event.movementX * 0.0028
     pointerPosition.y -= event.movementY * 0.0028
@@ -196,7 +196,7 @@ export const createActionWheel = ({ scene, camera, domElement, actions, onOpenCh
   }
 
   const open = () => {
-    if (isOpen) return
+    if (isOpen || actions.length === 0) return
 
     isOpen = true
     selectedIndex = -1
@@ -211,7 +211,7 @@ export const createActionWheel = ({ scene, camera, domElement, actions, onOpenCh
   const close = ({ applySelection = false } = {}) => {
     if (!isOpen) return
 
-    const action = applySelection ? actions[selectedIndex] : null
+    const action = applySelection && selectedIndex >= 0 ? actions[selectedIndex] : null
     isOpen = false
     group.visible = false
     onOpenChange?.(false)

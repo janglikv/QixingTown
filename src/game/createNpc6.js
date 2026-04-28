@@ -22,45 +22,9 @@ const CONTROL_POINT_RADIUS = 0.01
 const HEAD_EYES_TEXTURE_SIZE = 512
 const HEAD_EYES_FONT_SIZE = 180
 const HEAD_EYES_YAW = -Math.PI / 2
-const UPPER_BODY_TRANSITION_SPEED = 7.2
-const UPPER_BODY_REACH_EPSILON = 0.025
-const WAVE_LOOP_SPEED = 7.4
-const LOWER_BODY_TRANSITION_DURATION = 0.46
-const SQUAT_ACTION_SPEED = 3.4
-const SQUAT_BODY_FORWARD_Z = 0.28
-
-const UPPER_BODY_POSES = {
-  idle: {
-    shoulderLeftZ: 0,
-    elbowLeftZ: 0,
-    shoulderRightZ: 0,
-    elbowRightZ: 0,
-  },
-  holdHead: {
-    shoulderLeftZ: -1.9,
-    elbowLeftZ: -2.03,
-    shoulderRightZ: 1.9,
-    elbowRightZ: 2.03,
-  },
-  raiseLeft: {
-    shoulderLeftZ: -2.05,
-    elbowLeftZ: -0.8,
-    shoulderRightZ: 0,
-    elbowRightZ: 0,
-  },
-  raiseRight: {
-    shoulderLeftZ: 0,
-    elbowLeftZ: 0,
-    shoulderRightZ: 2.05,
-    elbowRightZ: 0.8,
-  },
-  raiseBoth: {
-    shoulderLeftZ: -2.05,
-    elbowLeftZ: -0.8,
-    shoulderRightZ: 2.05,
-    elbowRightZ: 0.8,
-  },
-}
+const FOOT_LOCK_HEIGHT_EPSILON = 0.001
+const USER_ACTION_TRANSITION_DURATION = 0.45
+const DEG_TO_RAD = Math.PI / 180
 
 export const NPC6_PROPORTIONS = {
   // 脚底高度，调大/调小会整体改变脚在模型局部坐标里的高度。
@@ -252,15 +216,17 @@ const lockNpc6Feet = ({ figure }) => {
     figure,
     bones: figure.userData.bones,
   })
-  const lockedFeet = Object.entries(figure.userData.footLocks)
-    .filter(([, footLock]) => footLock.enabled)
-  if (lockedFeet.length === 0) return
+  const footEntries = Object.entries(figure.userData.footLocks)
+  const lowestY = Math.min(...footEntries.map(([key]) => joints[key].y))
+  const lockedFeet = footEntries.filter(([key]) => (
+    joints[key].y <= lowestY + FOOT_LOCK_HEIGHT_EPSILON
+  ))
 
   const offset = lockedFeet
     .reduce((sum, [key, footLock]) => sum.add(footLock.target.clone().sub(joints[key])), new Vector3())
     .multiplyScalar(1 / lockedFeet.length)
 
-  // hip 是骨架根节点；用已锁定脚的平均偏移反推根节点位置，避免支撑脚被关键帧带着滑动。
+  // 只锁当前最低脚；两脚高度接近时才双脚平均，避免抬脚时根节点被拉向双脚中点。
   figure.userData.skeletonRoot.position.add(offset)
 }
 
@@ -300,6 +266,7 @@ const createEndCap = ({ key, position, material }) => {
   const radius = key === 'head' ? HEAD_RADIUS : END_CAP_RADIUS
   const endCap = new Mesh(new SphereGeometry(radius, 16, 12), material)
   endCap.position.copy(position)
+  endCap.castShadow = true
   if (key === 'head') {
     // 把贴图中心转到角色正前方，避免眼睛跑到侧面。
     endCap.rotation.y = HEAD_EYES_YAW
@@ -383,6 +350,7 @@ const createTubeStickFigure = ({ name, position, joints, tubePaths, endCapKeys }
 
   tubePaths.forEach((keys) => {
     const mesh = createTube({ keys, joints, material })
+    mesh.castShadow = true
     tubes.push({ mesh, keys })
     figure.add(mesh)
   })
@@ -420,7 +388,7 @@ const createTubeStickFigure = ({ name, position, joints, tubePaths, endCapKeys }
 const attachNpc6SkeletonSync = ({ figure }) => {
   figure.userData.update = (delta) => {
     figure.userData.updateLowerBody?.(delta)
-    figure.userData.updateUpperBody?.(delta)
+    figure.userData.updateUserAction?.(delta)
     lockNpc6Feet({ figure })
 
     const joints = readSkeletonJointPositions({
@@ -452,61 +420,8 @@ const createLowerBodyPoses = (joints) => {
       hipRightZ: 0,
       kneeRightX: 0,
     },
-    squat: {
-      rootX: joints.hip.x,
-      hipZ: 0,
-      hipLeftOffsetX: hipLeftOffset.x,
-      hipRightOffsetX: hipRightOffset.x,
-      neckX: neckOffset.x,
-      neckZ: neckOffset.z + SQUAT_BODY_FORWARD_Z,
-      neckRotationZ: 0,
-      hipLeftX: -1.3,
-      hipLeftZ: 0,
-      kneeLeftX: 1.85,
-      hipRightX: -1.3,
-      hipRightZ: 0,
-      kneeRightX: 1.85,
-    },
   }
 }
-
-const getNpc6ArmPose = ({ bones }) => ({
-  shoulderLeftZ: bones.shoulderLeft.rotation.z,
-  elbowLeftZ: bones.elbowLeft.rotation.z,
-  shoulderRightZ: bones.shoulderRight.rotation.z,
-  elbowRightZ: bones.elbowRight.rotation.z,
-})
-
-const moveValueToward = ({ current, target, maxStep }) => {
-  const diff = target - current
-  if (Math.abs(diff) <= maxStep) return target
-
-  return current + Math.sign(diff) * maxStep
-}
-
-const movePoseToward = ({ current, target, maxStep }) => ({
-  ...Object.fromEntries(
-    Object.keys(target).map((key) => [
-      key,
-      moveValueToward({
-        current: current[key],
-        target: target[key],
-        maxStep,
-      }),
-    ]),
-  ),
-})
-
-const getPoseDistance = ({ current, target }) => Math.max(
-  ...Object.keys(target).map((key) => Math.abs(current[key] - target[key])),
-)
-
-const mixPose = ({ from, to, amount }) => Object.fromEntries(
-  Object.keys(to).map((key) => [
-    key,
-    from[key] + (to[key] - from[key]) * amount,
-  ]),
-)
 
 const smoothStep = (value) => {
   const amount = Math.min(Math.max(value, 0), 1)
@@ -530,182 +445,134 @@ const applyNpc6LowerBodyPose = ({ bones, pose }) => {
   bones.kneeRight.rotation.x = pose.kneeRightX
 }
 
-const applyNpc6ArmPose = ({ bones, pose }) => {
-  bones.shoulderLeft.rotation.z = pose.shoulderLeftZ
-  bones.elbowLeft.rotation.z = pose.elbowLeftZ
-  bones.shoulderRight.rotation.z = pose.shoulderRightZ
-  bones.elbowRight.rotation.z = pose.elbowRightZ
+const getJointControlRotation = ({ bone, direction, angle }) => {
+  const value = angle * DEG_TO_RAD
+
+  if (direction === 'forward') return { axis: 'x', value: -value }
+  if (direction === 'backward') return { axis: 'x', value }
+  if (direction === 'up') return { axis: 'z', value: bone.endsWith('Left') ? -value : value }
+  if (direction === 'down') return { axis: 'z', value: bone.endsWith('Left') ? value : -value }
+
+  return null
+}
+
+const getJointControlBones = (bone) => {
+  if (bone === 'bothArms') return ['shoulderLeft', 'shoulderRight']
+  if (bone === 'bothHands') return ['elbowLeft', 'elbowRight']
+  if (bone === 'bothLegs') return ['hipLeft', 'hipRight']
+  if (bone === 'bothFeet') return ['kneeLeft', 'kneeRight']
+
+  return [bone]
 }
 
 const createNpc6LowerBodyController = ({ bones, joints }) => {
   const poses = createLowerBodyPoses(joints)
-  const state = {
-    mode: 'stand',
-    phase: 'hold',
-    actionTime: 0,
-    currentBasePose: poses.stand,
-    transitionFrom: poses.stand,
-    transitionTo: poses.stand,
-    transitionElapsed: 0,
-  }
 
-  const getTargetPose = () => {
-    if (state.mode === 'squatPose' || state.mode === 'squatAction') return poses.squat
-
-    return poses.stand
-  }
-
-  const setMode = (mode) => {
-    if (state.mode === mode && state.phase !== 'transition') return
-
-    state.mode = mode
-    state.phase = 'transition'
-    state.actionTime = 0
-    state.transitionFrom = state.currentBasePose
-    state.transitionTo = getTargetPose()
-    state.transitionElapsed = 0
-  }
-
-  const applyPose = (pose) => {
-    state.currentBasePose = pose
-    applyNpc6LowerBodyPose({ bones, pose })
-  }
-
-  const update = (delta) => {
-    if (state.phase === 'transition') {
-      state.transitionElapsed += delta
-      applyPose(mixPose({
-        from: state.transitionFrom,
-        to: state.transitionTo,
-        amount: smoothStep(state.transitionElapsed / LOWER_BODY_TRANSITION_DURATION),
-      }))
-      if (state.transitionElapsed >= LOWER_BODY_TRANSITION_DURATION) {
-        applyPose(state.transitionTo)
-        if (state.mode === 'squatAction') state.actionTime = 0
-        state.phase = state.mode === 'squatAction' ? 'actionLoop' : 'hold'
-      }
-      return
-    }
-
-    if (state.phase === 'actionLoop') {
-      state.actionTime += delta * SQUAT_ACTION_SPEED
-      applyPose(mixPose({
-        from: poses.stand,
-        to: poses.squat,
-        amount: (Math.cos(state.actionTime) + 1) / 2,
-      }))
-      return
-    }
-
-    applyPose(getTargetPose())
+  const update = () => {
+    applyNpc6LowerBodyPose({ bones, pose: poses.stand })
   }
 
   return {
-    setMode,
     update,
   }
 }
 
-const getUpperBodyTargetPose = (mode) => {
-  if (mode === 'holdHead') return UPPER_BODY_POSES.holdHead
-  if (mode === 'raiseLeft' || mode === 'waveLeft') return UPPER_BODY_POSES.raiseLeft
-  if (mode === 'raiseRight' || mode === 'waveRight') return UPPER_BODY_POSES.raiseRight
-  if (mode === 'raiseBoth' || mode === 'waveBothSame' || mode === 'waveBothMirror') {
-    return UPPER_BODY_POSES.raiseBoth
-  }
-
-  return UPPER_BODY_POSES.idle
-}
-
-const isUpperBodyWaveMode = (mode) => (
-  mode === 'waveLeft'
-  || mode === 'waveRight'
-  || mode === 'waveBothSame'
-  || mode === 'waveBothMirror'
-)
-
-const getUpperBodyWavePose = ({ mode, waveTime }) => {
-  const wave = Math.sin(waveTime) * 0.7
-
-  if (mode === 'waveLeft') {
-    return {
-      ...UPPER_BODY_POSES.raiseLeft,
-      elbowLeftZ: -0.95 - wave,
-    }
-  }
-  if (mode === 'waveBothSame') {
-    return {
-      ...UPPER_BODY_POSES.raiseBoth,
-      elbowLeftZ: -0.95 - wave,
-      elbowRightZ: 0.95 + wave,
-    }
-  }
-  if (mode === 'waveBothMirror') {
-    return {
-      ...UPPER_BODY_POSES.raiseBoth,
-      elbowLeftZ: -0.95 - wave,
-      elbowRightZ: 0.95 - wave,
-    }
-  }
-
-  return {
-    ...UPPER_BODY_POSES.raiseRight,
-    elbowRightZ: 0.95 + wave,
-  }
-}
-
-const createNpc6UpperBodyController = ({ bones }) => {
+const createNpc6UserActionController = ({ bones }) => {
   const state = {
-    mode: 'idle',
-    phase: 'hold',
-    waveTime: 0,
+    action: null,
+    currentRotations: {},
+    fromRotations: {},
+    targetRotations: {},
+    touchedBones: new Set(),
+    transitionElapsed: 0,
+    transitionDuration: USER_ACTION_TRANSITION_DURATION,
   }
 
-  const setMode = (mode) => {
-    if (state.mode === mode && state.phase !== 'transition') return
+  const createTargetRotations = (action) => {
+    const targets = {}
 
-    state.mode = mode
-    state.phase = 'transition'
-    state.waveTime = 0
+    action.controls.forEach((control) => {
+      if (!Number.isFinite(control.angle)) return
+
+      getJointControlBones(control.bone).forEach((bone) => {
+        if (!bones[bone]) return
+
+        const rotation = getJointControlRotation({ ...control, bone })
+        if (!rotation) return
+
+        targets[bone] ??= { x: 0, z: 0 }
+        targets[bone][rotation.axis] += rotation.value
+      })
+    })
+
+    return targets
+  }
+
+  const setTarget = ({ action, immediate = false }) => {
+    const controls = Array.isArray(action?.controls) ? action.controls : []
+
+    state.action = {
+      ...action,
+      controls,
+    }
+    state.fromRotations = { ...state.currentRotations }
+    state.targetRotations = createTargetRotations(state.action)
+    state.touchedBones = new Set([
+      ...Object.keys(state.currentRotations),
+      ...Object.keys(state.targetRotations),
+    ])
+    state.transitionElapsed = immediate ? state.transitionDuration : 0
+    if (immediate) state.currentRotations = { ...state.targetRotations }
+  }
+
+  const play = (action) => {
+    setTarget({ action })
+  }
+
+  const preview = (action) => {
+    setTarget({ action, immediate: true })
+  }
+
+  const cancel = () => {
+    state.action = null
+    state.fromRotations = { ...state.currentRotations }
+    state.targetRotations = {}
+    state.touchedBones = new Set(Object.keys(state.currentRotations))
+    state.transitionElapsed = 0
   }
 
   const update = (delta) => {
-    if (state.phase === 'transition') {
-      const target = getUpperBodyTargetPose(state.mode)
-      const nextPose = movePoseToward({
-        current: getNpc6ArmPose({ bones }),
-        target,
-        maxStep: UPPER_BODY_TRANSITION_SPEED * delta,
-      })
+    if (state.touchedBones.size === 0) return
 
-      applyNpc6ArmPose({ bones, pose: nextPose })
-      if (getPoseDistance({ current: nextPose, target }) <= UPPER_BODY_REACH_EPSILON) {
-        applyNpc6ArmPose({ bones, pose: target })
-        state.phase = isUpperBodyWaveMode(state.mode) ? 'waveLoop' : 'hold'
+    state.transitionElapsed = Math.min(
+      state.transitionElapsed + delta,
+      state.transitionDuration,
+    )
+    const amount = smoothStep(state.transitionElapsed / state.transitionDuration)
+    const nextRotations = {}
+
+    state.touchedBones.forEach((bone) => {
+      const from = state.fromRotations[bone] ?? { x: 0, z: 0 }
+      const target = state.targetRotations[bone] ?? { x: 0, z: 0 }
+      const rotation = {
+        x: from.x + (target.x - from.x) * amount,
+        z: from.z + (target.z - from.z) * amount,
       }
-      return
-    }
 
-    if (state.phase === 'waveLoop') {
-      state.waveTime += delta * WAVE_LOOP_SPEED
-      applyNpc6ArmPose({
-        bones,
-        pose: getUpperBodyWavePose({
-          mode: state.mode,
-          waveTime: state.waveTime,
-        }),
-      })
-      return
-    }
-
-    applyNpc6ArmPose({
-      bones,
-      pose: getUpperBodyTargetPose(state.mode),
+      bones[bone].rotation.x = rotation.x
+      bones[bone].rotation.z = rotation.z
+      if (rotation.x !== 0 || rotation.z !== 0) nextRotations[bone] = rotation
     })
+    state.currentRotations = nextRotations
+    if (amount >= 1 && Object.keys(state.currentRotations).length === 0) {
+      state.touchedBones.clear()
+    }
   }
 
   return {
-    setMode,
+    cancel,
+    play,
+    preview,
     update,
   }
 }
@@ -714,9 +581,6 @@ export const createNpc6 = ({
   name = 'npc6',
   position = [10.7, STICK_NPC_HEIGHT / 2, -4],
   proportions = NPC6_PROPORTIONS,
-  upperPose = 'idle',
-  squatPose = false,
-  squatAction = false,
 } = {}) => {
   const joints = createNpc6JointPositions(proportions)
   const skeleton = createNpc6Skeleton(joints)
@@ -732,48 +596,24 @@ export const createNpc6 = ({
   figure.userData.skeletonRoot = skeleton.root
   figure.userData.bones = skeleton.bones
   figure.userData.footLocks = {
-    footLeft: { enabled: true, target: joints.footLeft.clone() },
-    footRight: { enabled: true, target: joints.footRight.clone() },
+    footLeft: { target: joints.footLeft.clone() },
+    footRight: { target: joints.footRight.clone() },
   }
   const lowerBody = createNpc6LowerBodyController({ bones: skeleton.bones, joints })
-  const upperBody = createNpc6UpperBodyController({ bones: skeleton.bones })
+  const userAction = createNpc6UserActionController({ bones: skeleton.bones })
   figure.userData.updateLowerBody = lowerBody.update
-  figure.userData.updateUpperBody = upperBody.update
-  figure.userData.setSquatPose = (enabled) => {
-    lowerBody.setMode(enabled ? 'squatPose' : 'stand')
-  }
-  figure.userData.setSquatAction = (enabled) => {
-    lowerBody.setMode(enabled ? 'squatAction' : 'stand')
-  }
+  figure.userData.updateUserAction = userAction.update
   figure.userData.setControlPointsVisible = (visible) => {
     figure.userData.controlPointGroup.visible = visible
   }
-  figure.userData.setHoldHeadPose = (enabled) => {
-    upperBody.setMode(enabled ? 'holdHead' : 'idle')
+  figure.userData.playUserAction = (action) => {
+    userAction.play(action)
   }
-  figure.userData.setHandRaisePose = (side) => {
-    if (side === 'left') {
-      upperBody.setMode('raiseLeft')
-    } else if (side === 'right') {
-      upperBody.setMode('raiseRight')
-    } else if (side === 'both') {
-      upperBody.setMode('raiseBoth')
-    } else {
-      upperBody.setMode('idle')
-    }
+  figure.userData.previewUserAction = (action) => {
+    userAction.preview(action)
   }
-  figure.userData.setWaveAction = (side) => {
-    if (side === 'left') {
-      upperBody.setMode('waveLeft')
-    } else if (side === 'right') {
-      upperBody.setMode('waveRight')
-    } else if (side === 'bothSame') {
-      upperBody.setMode('waveBothSame')
-    } else if (side === 'bothMirror') {
-      upperBody.setMode('waveBothMirror')
-    } else {
-      upperBody.setMode('idle')
-    }
+  figure.userData.cancelUserAction = () => {
+    userAction.cancel()
   }
   figure.userData.syncPose = () => {
     syncTubeStickFigurePose({
@@ -785,16 +625,6 @@ export const createNpc6 = ({
     })
   }
   attachNpc6SkeletonSync({ figure })
-  if (upperPose === 'holdHead') {
-    figure.userData.setHoldHeadPose(true)
-  } else if (upperPose !== 'idle') {
-    figure.userData.setHandRaisePose(upperPose)
-  }
-  if (squatAction) {
-    figure.userData.setSquatAction(true)
-  } else if (squatPose) {
-    figure.userData.setSquatPose(true)
-  }
 
   figure.userData.dispose = () => {
     figure.userData.headEyesTexture?.dispose()
