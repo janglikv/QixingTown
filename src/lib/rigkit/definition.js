@@ -84,6 +84,7 @@ const createSupportContactKeys = (boneNodes) => (
 export const createRigDefinition = (definition) => {
   const boneNodes = flattenBoneTree(definition.root)
   const rootBoneKey = definition.root.key
+  const controlGroups = definition.controlGroups ?? []
   const boneDefinitions = Object.fromEntries(
     boneNodes.map(({ parentKey, ...bone }) => [
       bone.key,
@@ -104,7 +105,7 @@ export const createRigDefinition = (definition) => {
       .map((bone) => [bone.parentKey, bone.key]),
     comSegments: createComSegments(boneNodes),
     actionBoneOptions: [
-      ...definition.controlGroups.map(({ key, cname }) => ({
+      ...controlGroups.map(({ key, cname }) => ({
         value: key,
         label: cname,
       })),
@@ -114,7 +115,7 @@ export const createRigDefinition = (definition) => {
       })),
     ],
     controlGroupsByKey: Object.fromEntries(
-      definition.controlGroups.map((group) => [group.key, group.bones]),
+      controlGroups.map((group) => [group.key, group.bones]),
     ),
     ikChainsByKey: Object.fromEntries(createIkChainsByKey(boneDefinitions)),
     supportContactKeys: createSupportContactKeys(boneNodes),

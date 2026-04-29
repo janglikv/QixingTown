@@ -16,6 +16,7 @@ import {
 import { createGroundTexture } from './createGroundTexture.js'
 import { createPlayer } from './createPlayer.js'
 import { createPolaris, createStarField } from './createStarField.js'
+import { createTree } from './createTree.js'
 
 export const createEnvironment = (scene) => {
   scene.background = new Color(WORLD_COLORS.sky)
@@ -48,10 +49,11 @@ export const createEnvironment = (scene) => {
     name: 'player',
     position: [10.7, 2.15 / 2, -4],
   })
+  const tree = createTree()
   const playerState = {
     userActionId: null,
   }
-  scene.add(starField, polaris, player)
+  scene.add(starField, polaris, tree, player)
 
   const groundTexture = createGroundTexture()
   const ground = new Mesh(
@@ -117,6 +119,7 @@ export const createEnvironment = (scene) => {
       moonLight,
       starField,
       polaris,
+      tree,
       player,
       ground,
     )
@@ -126,6 +129,10 @@ export const createEnvironment = (scene) => {
     polaris.geometry.dispose()
     polaris.userData.spriteTexture?.dispose()
     polaris.material.dispose()
+    tree.traverse((child) => {
+      if (child.isMesh) child.geometry.dispose()
+    })
+    tree.userData.dispose?.()
     player.traverse((child) => {
       if (child.isMesh) child.geometry.dispose()
     })
