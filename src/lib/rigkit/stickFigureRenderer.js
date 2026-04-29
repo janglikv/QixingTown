@@ -12,6 +12,7 @@ const DEFAULT_TUBE_RADIUS = 0.045
 const DEFAULT_TUBE_RADIAL_SEGMENTS = 12
 const DEFAULT_END_CAP_RADIUS = 0.07
 const DEFAULT_CONTROL_POINT_RADIUS = 0.01
+const DEFAULT_JOINT_CAP_RADIUS_FACTOR = 1.25
 
 const createTubeGeometry = ({ keys, joints, radius, radialSegments }) => {
   const points = keys.map((key) => joints[key])
@@ -51,7 +52,44 @@ const createDefaultControlPointMaterial = () => (
   })
 )
 
-const createDefaultTubePaths = (rig) => rig.hierarchy
+const createChildKeysByParent = (rig) => {
+  const childKeysByParent = {}
+
+  rig.hierarchy.forEach(([parentKey, childKey]) => {
+    childKeysByParent[parentKey] ??= []
+    childKeysByParent[parentKey].push(childKey)
+  })
+
+  return childKeysByParent
+}
+
+const createDefaultTubePaths = (rig) => {
+  const childKeysByParent = createChildKeysByParent(rig)
+  const paths = []
+
+  const walk = (key, path) => {
+    const childKeys = childKeysByParent[key] ?? []
+
+    // 单子节点链路合并成一条软管，分叉处拆开并交给 joint cap 遮缝。
+    if (childKeys.length !== 1) {
+      if (path.length > 1) paths.push(path)
+      childKeys.forEach((childKey) => walk(childKey, [key, childKey]))
+      return
+    }
+
+    walk(childKeys[0], [...path, childKeys[0]])
+  }
+
+  walk(rig.rootBoneKey, [rig.rootBoneKey])
+
+  return paths
+}
+
+const createDefaultJointCapKeys = (rig) => (
+  Object.entries(createChildKeysByParent(rig))
+    .filter(([, childKeys]) => childKeys.length > 1)
+    .map(([key]) => key)
+)
 
 const getEndCapConfig = ({ render, key }) => {
   const endCaps = render.endCaps ?? {}
@@ -120,9 +158,12 @@ export const createStickFigureRig = ({ name, position, joints, rig, render }) =>
   }
   const tubes = []
   const endCaps = {}
+  const jointCaps = {}
   const tubeRadius = render.tube?.radius ?? DEFAULT_TUBE_RADIUS
   const tubeRadialSegments = render.tube?.radialSegments ?? DEFAULT_TUBE_RADIAL_SEGMENTS
   const tubePaths = render.tubes ?? createDefaultTubePaths(rig)
+  const jointCapKeys = render.jointCaps?.keys ?? createDefaultJointCapKeys(rig)
+  const jointCapRadius = render.jointCaps?.radius ?? tubeRadius * DEFAULT_JOINT_CAP_RADIUS_FACTOR
 
   tubePaths.forEach((keys) => {
     const mesh = createTube({
@@ -135,6 +176,19 @@ export const createStickFigureRig = ({ name, position, joints, rig, render }) =>
     mesh.castShadow = true
     tubes.push({ mesh, keys })
     figure.add(mesh)
+  })
+
+  jointCapKeys.forEach((key) => {
+    const jointCap = new Mesh(
+      new SphereGeometry(jointCapRadius, 16, 12),
+      material,
+    )
+
+    jointCap.position.copy(joints[key])
+    jointCap.castShadow = true
+    jointCap.name = `${key}JointCap`
+    jointCaps[key] = jointCap
+    figure.add(jointCap)
   })
 
   ;(rig.endBoneKeys ?? []).forEach((key) => {
@@ -164,6 +218,7 @@ export const createStickFigureRig = ({ name, position, joints, rig, render }) =>
   figure.position.set(...position)
   figure.userData.material = material
   figure.userData.tubes = tubes
+  figure.userData.jointCaps = jointCaps
   figure.userData.endCaps = endCaps
   figure.userData.controlPointGroup = controlPointGroup
   figure.userData.controlPoints = controlPoints
@@ -173,6 +228,8 @@ export const createStickFigureRig = ({ name, position, joints, rig, render }) =>
     tubePaths,
     tubeRadius,
     tubeRadialSegments,
+    jointCapKeys,
+    jointCapRadius,
   }
 
   return figure
@@ -193,6 +250,10 @@ export const syncStickFigureRigPose = ({ figure, joints }) => {
 
   Object.entries(figure.userData.endCaps).forEach(([key, endCap]) => {
     endCap.position.copy(joints[key])
+  })
+
+  Object.entries(figure.userData.jointCaps).forEach(([key, jointCap]) => {
+    jointCap.position.copy(joints[key])
   })
 
   Object.entries(figure.userData.controlPoints).forEach(([key, controlPoint]) => {
