@@ -127,6 +127,46 @@ const createControlPointToggle = ({ app, initialVisible, onChange }) => {
   }
 }
 
+const createControlTargetIndicator = ({ app, initialTarget }) => {
+  const element = document.createElement('div')
+  const labels = {
+    camera: '镜头',
+    player: 'Player',
+  }
+
+  Object.assign(element.style, {
+    position: 'absolute',
+    right: '6px',
+    top: '40px',
+    zIndex: '10',
+    display: 'none',
+    padding: '8px 10px',
+    borderRadius: '6px',
+    background: 'rgba(7, 17, 31, 0.72)',
+    color: '#eef5ee',
+    fontSize: '14px',
+    userSelect: 'none',
+    pointerEvents: 'none',
+  })
+
+  const setTarget = (target) => {
+    element.textContent = `控制目标：${labels[target] ?? target}`
+  }
+
+  setTarget(initialTarget)
+  app.append(element)
+
+  return {
+    setTarget,
+    syncCursorVisible: (visible) => {
+      element.style.display = visible ? 'block' : 'none'
+    },
+    dispose: () => {
+      element.remove()
+    },
+  }
+}
+
 const getCameraStateSignature = (camera) => (
   [
     ...camera.position.toArray(),
@@ -159,6 +199,7 @@ export const createSceneApp = (app) => {
   const playerController = createPlayerController({
     camera,
     domElement: renderer.domElement,
+    movePlayer: environment.movePlayer,
   })
   const controlPointsVisible = readControlPointsVisible()
   environment.setPlayerControlPointsVisible(controlPointsVisible)
@@ -169,6 +210,10 @@ export const createSceneApp = (app) => {
       environment.setPlayerControlPointsVisible(visible)
       writeControlPointsVisible(visible)
     },
+  })
+  const controlTargetIndicator = createControlTargetIndicator({
+    app,
+    initialTarget: playerController.getControlTarget(),
   })
   const actionSettingsPanel = createActionSettingsPanel({ app })
   const createUserActionWheelActions = () => readUserActions().map((action) => ({
@@ -217,6 +262,11 @@ export const createSceneApp = (app) => {
 
   const onKeyDown = (event) => {
     if (event.repeat) return
+
+    if (event.code === 'Tab' && !['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement?.tagName)) {
+      event.preventDefault()
+      controlTargetIndicator.setTarget(playerController.toggleControlTarget())
+    }
 
     if (event.code === 'KeyG') {
       event.preventDefault()
@@ -275,6 +325,7 @@ export const createSceneApp = (app) => {
     playerController.update(delta)
     const cursorVisible = !playerController.controls.isLocked
     controlPointToggle.syncCursorVisible(cursorVisible)
+    controlTargetIndicator.syncCursorVisible(cursorVisible)
     actionSettingsPanel.syncCursorVisible(cursorVisible)
     environment.update(delta)
     actionWheel.update()
@@ -303,6 +354,7 @@ export const createSceneApp = (app) => {
     app.removeEventListener('qixing-town:user-actions-changed', rebuildActionWheel)
     persistCameraStateOnUnload()
     controlPointToggle.dispose()
+    controlTargetIndicator.dispose()
     actionSettingsPanel.dispose()
     actionWheel.dispose()
     playerController.dispose()

@@ -117,6 +117,11 @@ const ikTargetLineMaterial = new LineBasicMaterial({
     player.userData.setControlPointsVisible(visible)
   }
 
+  const movePlayer = (offset) => {
+    player.position.x += offset.x
+    player.position.z += offset.z
+  }
+
   const syncPlayerIkTargetMarkers = (action) => {
     const targets = action?.type === 'ik' && Array.isArray(action.ikTargets)
       ? action.ikTargets
@@ -216,6 +221,7 @@ const ikTargetLineMaterial = new LineBasicMaterial({
   return {
     playerState,
     setPlayerControlPointsVisible,
+    movePlayer,
     playPlayerUserAction,
     previewPlayerUserAction,
     cancelPlayerUserAction,

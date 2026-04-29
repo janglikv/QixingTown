@@ -1,4 +1,4 @@
-import { Vector2 } from 'three'
+import { Vector2, Vector3 } from 'three'
 import { PointerLockControls } from 'three/examples/jsm/controls/PointerLockControls.js'
 import {
   CAMERA_HEIGHT,
@@ -6,7 +6,12 @@ import {
   WORLD_TUNING,
 } from '../config.js'
 
-export const createPlayerController = ({ camera, domElement }) => {
+const CONTROL_TARGETS = {
+  camera: 'camera',
+  player: 'player',
+}
+
+export const createPlayerController = ({ camera, domElement, movePlayer }) => {
   const controls = new PointerLockControls(camera, domElement)
   controls.pointerSpeed = WORLD_TUNING.pointerSpeed
   controls.minPolarAngle = WORLD_TUNING.minPolarAngle
@@ -20,6 +25,10 @@ export const createPlayerController = ({ camera, domElement }) => {
   }
 
   const moveIntent = new Vector2()
+  const playerMove = new Vector3()
+  const cameraForward = new Vector3()
+  const cameraRight = new Vector3()
+  let controlTarget = CONTROL_TARGETS.camera
 
   const resetMovement = () => {
     movement.forward = false
@@ -110,8 +119,21 @@ export const createPlayerController = ({ camera, domElement }) => {
 
       if (moveIntent.lengthSq() > 0) {
         moveIntent.normalize()
-        controls.moveRight(moveIntent.x * MOVE_SPEED * delta)
-        controls.moveForward(moveIntent.y * MOVE_SPEED * delta)
+        if (controlTarget === CONTROL_TARGETS.camera) {
+          controls.moveRight(moveIntent.x * MOVE_SPEED * delta)
+          controls.moveForward(moveIntent.y * MOVE_SPEED * delta)
+        } else {
+          camera.getWorldDirection(cameraForward)
+          cameraForward.y = 0
+          cameraForward.normalize()
+          cameraRight.crossVectors(cameraForward, camera.up).normalize()
+          playerMove
+            .copy(cameraRight)
+            .multiplyScalar(moveIntent.x)
+            .add(cameraForward.multiplyScalar(moveIntent.y))
+            .multiplyScalar(MOVE_SPEED * delta)
+          movePlayer(playerMove)
+        }
       }
     }
 
@@ -132,6 +154,14 @@ export const createPlayerController = ({ camera, domElement }) => {
 
   return {
     controls,
+    getControlTarget: () => controlTarget,
+    toggleControlTarget: () => {
+      controlTarget = controlTarget === CONTROL_TARGETS.camera
+        ? CONTROL_TARGETS.player
+        : CONTROL_TARGETS.camera
+      resetMovement()
+      return controlTarget
+    },
     update,
     dispose,
   }

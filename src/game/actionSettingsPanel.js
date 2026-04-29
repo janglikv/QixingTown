@@ -167,15 +167,27 @@ export const createActionSettingsPanel = ({ app }) => {
   const addControlButton = document.createElement('button')
   const saveButton = document.createElement('button')
   const deleteButton = document.createElement('button')
-  const cancelButton = document.createElement('button')
 
-  button.type = 'button'
+  const handleToggle = () => {
+    visible = !visible
+    panel.style.display = visible ? 'block' : 'none'
+    persistPanelState()
+    syncForm()
+  }
+
+  const handleDetailClose = () => {
+    selectedId = null
+    persistPanelState()
+    renderList()
+    syncForm()
+  }
+
   button.textContent = '动作设置'
   applyButtonStyle(button)
   Object.assign(button.style, {
     position: 'absolute',
     right: '14px',
-    top: '56px',
+    top: '76px',
     zIndex: '10',
     display: 'none',
     alignItems: 'center',
@@ -189,7 +201,7 @@ export const createActionSettingsPanel = ({ app }) => {
   Object.assign(panel.style, {
     position: 'absolute',
     right: '14px',
-    top: '98px',
+    top: '16px',
     zIndex: '11',
     display: 'none',
     width: '360px',
@@ -197,7 +209,7 @@ export const createActionSettingsPanel = ({ app }) => {
     padding: '12px',
     border: '1px solid rgba(238, 245, 238, 0.18)',
     borderRadius: '8px',
-    background: 'rgba(7, 17, 31, 0.9)',
+    background: '#07111f',
     color: '#eef5ee',
     fontSize: '14px',
     userSelect: 'none',
@@ -205,16 +217,16 @@ export const createActionSettingsPanel = ({ app }) => {
 
   Object.assign(detailPanel.style, {
     position: 'absolute',
-    right: '388px',
-    top: '98px',
-    zIndex: '11',
+    right: '14px',
+    top: '16px',
+    zIndex: '12',
     display: 'none',
     width: '430px',
     maxWidth: 'calc(100vw - 28px)',
     padding: '12px',
     border: '1px solid rgba(238, 245, 238, 0.18)',
     borderRadius: '8px',
-    background: 'rgba(7, 17, 31, 0.9)',
+    background: '#07111f',
     color: '#eef5ee',
     fontSize: '14px',
     userSelect: 'none',
@@ -311,17 +323,14 @@ export const createActionSettingsPanel = ({ app }) => {
   addControlButton.type = 'button'
   saveButton.type = 'button'
   deleteButton.type = 'button'
-  cancelButton.type = 'button'
   addButton.textContent = '新增'
   addControlButton.textContent = '新增关节'
   saveButton.textContent = '保存'
   deleteButton.textContent = '删除'
-  cancelButton.textContent = '取消'
   applyButtonStyle(addButton)
   applyButtonStyle(addControlButton)
   applyButtonStyle(saveButton)
   applyButtonStyle(deleteButton, 'danger')
-  applyButtonStyle(cancelButton)
 
   const controlBar = document.createElement('div')
   Object.assign(controlBar.style, {
@@ -338,7 +347,7 @@ export const createActionSettingsPanel = ({ app }) => {
     justifyContent: 'flex-end',
     marginTop: '12px',
   })
-  actionsBar.append(cancelButton, saveButton, deleteButton)
+  actionsBar.append(saveButton, deleteButton)
 
   const addBar = document.createElement('div')
   Object.assign(addBar.style, {
@@ -347,8 +356,44 @@ export const createActionSettingsPanel = ({ app }) => {
     marginTop: '12px',
   })
   addBar.append(addButton)
-  panel.append(title, list, emptyText, addBar)
-  detailPanel.append(detailTitle, form, controlTitle, controlHeader, controlList, emptyControlText, controlBar, actionsBar)
+
+  const createCloseButton = (onClick) => {
+    const btn = document.createElement('button')
+    btn.type = 'button'
+    btn.innerHTML = '&times;'
+    Object.assign(btn.style, {
+      position: 'absolute',
+      right: '8px',
+      top: '8px',
+      width: '24px',
+      height: '24px',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      border: 'none',
+      borderRadius: '4px',
+      background: 'transparent',
+      color: '#ff4d4f',
+      fontSize: '20px',
+      cursor: 'pointer',
+      lineHeight: '1',
+      zIndex: '12',
+    })
+    btn.addEventListener('mouseenter', () => {
+      btn.style.background = 'rgba(255, 77, 79, 0.1)'
+    })
+    btn.addEventListener('mouseleave', () => {
+      btn.style.background = 'transparent'
+    })
+    btn.addEventListener('click', onClick)
+    return btn
+  }
+
+  const panelCloseButton = createCloseButton(handleToggle)
+  const detailCloseButton = createCloseButton(handleDetailClose)
+
+  panel.append(panelCloseButton, title, list, emptyText, addBar)
+  detailPanel.append(detailCloseButton, detailTitle, form, controlTitle, controlHeader, controlList, emptyControlText, controlBar, actionsBar)
   app.append(button, panel, detailPanel)
 
   const stopPointerLock = (event) => {
@@ -362,10 +407,8 @@ export const createActionSettingsPanel = ({ app }) => {
   }
 
   const syncDetailPanelPosition = () => {
-    const wideLayout = window.innerWidth >= 740
-
-    detailPanel.style.right = wideLayout ? '388px' : '14px'
-    detailPanel.style.top = wideLayout ? '98px' : '420px'
+    detailPanel.style.right = '14px'
+    detailPanel.style.top = '16px'
   }
 
   const syncForm = () => {
@@ -378,7 +421,6 @@ export const createActionSettingsPanel = ({ app }) => {
     typeSelect.disabled = disabled
     saveButton.disabled = disabled
     deleteButton.disabled = disabled
-    cancelButton.disabled = disabled
     addControlButton.disabled = disabled
     nameInput.value = action?.label ?? ''
     draftActionType = action?.type === 'ik' ? 'ik' : 'fk'
@@ -603,7 +645,7 @@ export const createActionSettingsPanel = ({ app }) => {
     }
 
     actions = [...actions, nextAction]
-    selectedId = null
+    selectedId = nextAction.id
     persistAndRender()
   }
 
@@ -716,13 +758,6 @@ export const createActionSettingsPanel = ({ app }) => {
     syncForm()
   }
 
-  const handleToggle = () => {
-    visible = !visible
-    panel.style.display = visible ? 'block' : 'none'
-    persistPanelState()
-    syncForm()
-  }
-
   const handleTypeChange = () => {
     draftActionType = typeSelect.value === 'ik' ? 'ik' : 'fk'
     activeIkTargetId = draftIkTargets[0]?.id ?? null
@@ -816,13 +851,11 @@ export const createActionSettingsPanel = ({ app }) => {
   addControlButton.addEventListener('click', handleAddControl)
   saveButton.addEventListener('click', handleSave)
   deleteButton.addEventListener('click', handleDelete)
-  cancelButton.addEventListener('click', handleCancel)
   window.addEventListener('keydown', handleIkKeyDown)
   window.addEventListener('keyup', handleIkKeyUp)
   window.addEventListener('resize', syncDetailPanelPosition)
     ;[button, panel, detailPanel].forEach((element) => {
       element.addEventListener('pointerdown', stopPointerLock)
-      element.addEventListener('click', stopPointerLock)
     })
 
   renderList()
@@ -857,14 +890,12 @@ export const createActionSettingsPanel = ({ app }) => {
       addControlButton.removeEventListener('click', handleAddControl)
       saveButton.removeEventListener('click', handleSave)
       deleteButton.removeEventListener('click', handleDelete)
-      cancelButton.removeEventListener('click', handleCancel)
       window.removeEventListener('keydown', handleIkKeyDown)
       window.removeEventListener('keyup', handleIkKeyUp)
       window.clearInterval(ikKeyboardIntervalId)
       window.removeEventListener('resize', syncDetailPanelPosition)
         ;[button, panel, detailPanel].forEach((element) => {
           element.removeEventListener('pointerdown', stopPointerLock)
-          element.removeEventListener('click', stopPointerLock)
         })
       button.remove()
       panel.remove()
