@@ -156,42 +156,42 @@ export const createSceneApp = (app) => {
   const camera = createCamera()
   const renderer = createRenderer(app)
   const environment = createEnvironment(scene)
-  const player = createPlayerController({
+  const playerController = createPlayerController({
     camera,
     domElement: renderer.domElement,
   })
   const controlPointsVisible = readControlPointsVisible()
-  environment.setNpc6ControlPointsVisible(controlPointsVisible)
+  environment.setPlayerControlPointsVisible(controlPointsVisible)
   const controlPointToggle = createControlPointToggle({
     app,
     initialVisible: controlPointsVisible,
     onChange: (visible) => {
-      environment.setNpc6ControlPointsVisible(visible)
+      environment.setPlayerControlPointsVisible(visible)
       writeControlPointsVisible(visible)
     },
   })
   const actionSettingsPanel = createActionSettingsPanel({ app })
   const createUserActionWheelActions = () => readUserActions().map((action) => ({
     label: action.label,
-    isActive: () => environment.npc6State.userActionId === action.id,
+    isActive: () => environment.playerState.userActionId === action.id,
     toggle: () => {
-      if (environment.npc6State.userActionId === action.id) {
-        environment.cancelNpc6UserAction()
+      if (environment.playerState.userActionId === action.id) {
+        environment.cancelPlayerUserAction()
       } else {
-        environment.playNpc6UserAction(action)
+        environment.playPlayerUserAction(action)
       }
     },
   }))
-  const createNpc6ActionWheel = () => createActionWheel({
+  const createPlayerActionWheel = () => createActionWheel({
     scene,
     camera,
     domElement: renderer.domElement,
     actions: createUserActionWheelActions(),
     onOpenChange: (open) => {
-      player.controls.enabled = !open
+      playerController.controls.enabled = !open
     },
   })
-  let actionWheel = createNpc6ActionWheel()
+  let actionWheel = createPlayerActionWheel()
   const timer = new Timer()
   timer.connect(document)
   let lastCameraStateSignature = getCameraStateSignature(camera)
@@ -215,24 +215,7 @@ export const createSceneApp = (app) => {
     renderer.setSize(window.innerWidth, window.innerHeight)
   }
 
-  const locomotionInput = {
-    forward: false,
-  }
-
-  const syncNpc6LocomotionInput = () => {
-    environment.setNpc6LocomotionInput(locomotionInput)
-  }
-
   const onKeyDown = (event) => {
-    if (event.code === 'KeyW' && !event.altKey) {
-      locomotionInput.forward = true
-      syncNpc6LocomotionInput()
-    }
-    if (event.code === 'AltLeft' || event.code === 'AltRight') {
-      locomotionInput.forward = false
-      syncNpc6LocomotionInput()
-    }
-
     if (event.repeat) return
 
     if (event.code === 'KeyG') {
@@ -245,11 +228,6 @@ export const createSceneApp = (app) => {
   }
 
   const onKeyUp = (event) => {
-    if (event.code === 'KeyW') {
-      locomotionInput.forward = false
-      syncNpc6LocomotionInput()
-    }
-
     if (event.code !== 'KeyG') return
 
     event.preventDefault()
@@ -258,22 +236,22 @@ export const createSceneApp = (app) => {
 
   const onPlayUserAction = (event) => {
     if (event.detail.preview) {
-      environment.previewNpc6UserAction(event.detail.action)
+      environment.previewPlayerUserAction(event.detail.action)
     } else {
-      environment.playNpc6UserAction(event.detail.action)
+      environment.playPlayerUserAction(event.detail.action)
     }
   }
 
   const rebuildActionWheel = () => {
     if (
-      environment.npc6State.userActionId
-      && !readUserActions().some((action) => action.id === environment.npc6State.userActionId)
+      environment.playerState.userActionId
+      && !readUserActions().some((action) => action.id === environment.playerState.userActionId)
     ) {
-      environment.cancelNpc6UserAction()
+      environment.cancelPlayerUserAction()
     }
     actionWheel.close()
     actionWheel.dispose()
-    actionWheel = createNpc6ActionWheel()
+    actionWheel = createPlayerActionWheel()
   }
 
   window.addEventListener('resize', onResize)
@@ -289,8 +267,8 @@ export const createSceneApp = (app) => {
     timer.update(timestamp)
     const delta = timer.getDelta()
 
-    player.update(delta)
-    const cursorVisible = !player.controls.isLocked
+    playerController.update(delta)
+    const cursorVisible = !playerController.controls.isLocked
     controlPointToggle.syncCursorVisible(cursorVisible)
     actionSettingsPanel.syncCursorVisible(cursorVisible)
     environment.update(delta)
@@ -321,7 +299,7 @@ export const createSceneApp = (app) => {
     controlPointToggle.dispose()
     actionSettingsPanel.dispose()
     actionWheel.dispose()
-    player.dispose()
+    playerController.dispose()
     environment.dispose()
     timer.dispose()
     renderer.dispose()

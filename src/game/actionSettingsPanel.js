@@ -1,22 +1,7 @@
+import { PLAYER_ACTION_BONE_OPTIONS } from './createPlayer.js'
+
 const ACTIONS_STORAGE_KEY = 'qixing-town:user-actions'
 const PANEL_STATE_STORAGE_KEY = 'qixing-town:action-settings-panel'
-
-const JOINT_OPTIONS = [
-  { value: 'hip', label: '身体' },
-  { value: 'neck', label: '头部' },
-  { value: 'bothArms', label: '双臂' },
-  { value: 'shoulderLeft', label: '左臂' },
-  { value: 'shoulderRight', label: '右臂' },
-  { value: 'bothHands', label: '双手' },
-  { value: 'elbowLeft', label: '左手' },
-  { value: 'elbowRight', label: '右手' },
-  { value: 'bothLegs', label: '双腿' },
-  { value: 'hipLeft', label: '左腿' },
-  { value: 'hipRight', label: '右腿' },
-  { value: 'bothFeet', label: '双脚' },
-  { value: 'kneeLeft', label: '左脚' },
-  { value: 'kneeRight', label: '右脚' },
-]
 
 const JOINT_DIRECTIONS = [
   { value: 'forward', label: '向前' },
@@ -398,7 +383,7 @@ export const createActionSettingsPanel = ({ app }) => {
 
     draftControls.forEach((control) => {
       const row = document.createElement('div')
-      const boneSelect = createSelectInput(JOINT_OPTIONS)
+      const boneSelect = createSelectInput(PLAYER_ACTION_BONE_OPTIONS)
       const directionSelect = createSelectInput(JOINT_DIRECTIONS)
       const angleInput = createTextInput()
       const removeButton = document.createElement('button')
@@ -492,7 +477,7 @@ export const createActionSettingsPanel = ({ app }) => {
     const label = nameInput.value.trim()
     if (!label) return
     const controls = draftControls.filter((control) => (
-      JOINT_OPTIONS.some((bone) => bone.value === control.bone)
+      PLAYER_ACTION_BONE_OPTIONS.some((bone) => bone.value === control.bone)
       && JOINT_DIRECTIONS.some((direction) => direction.value === control.direction)
       && Number.isFinite(control.angle)
     ))
@@ -512,7 +497,7 @@ export const createActionSettingsPanel = ({ app }) => {
       ...draftControls,
       {
         id: createId(),
-        bone: JOINT_OPTIONS[0].value,
+        bone: PLAYER_ACTION_BONE_OPTIONS[0].value,
         direction: JOINT_DIRECTIONS[0].value,
         angle: 0,
       },

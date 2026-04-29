@@ -8,7 +8,7 @@ import {
   Vector3,
 } from 'three'
 
-export const STICK_NPC_HEIGHT = 2.15
+export const STICK_FIGURE_HEIGHT = 2.15
 export const Z_OFFSET = 0.02
 
 const LINE_RADIUS = 0.025

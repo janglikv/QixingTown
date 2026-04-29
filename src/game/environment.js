@@ -14,7 +14,7 @@ import {
   WORLD_TUNING,
 } from '../config.js'
 import { createGroundTexture } from './createGroundTexture.js'
-import { createNpc6 } from './createNpc6.js'
+import { createPlayer } from './createPlayer.js'
 import { createPolaris, createStarField } from './createStarField.js'
 
 export const createEnvironment = (scene) => {
@@ -44,14 +44,14 @@ export const createEnvironment = (scene) => {
 
   const starField = createStarField()
   const polaris = createPolaris()
-  const npc6 = createNpc6({
-    name: 'npc6',
+  const player = createPlayer({
+    name: 'player',
     position: [10.7, 2.15 / 2, -4],
   })
-  const npc6State = {
+  const playerState = {
     userActionId: null,
   }
-  scene.add(starField, polaris, npc6)
+  scene.add(starField, polaris, player)
 
   const groundTexture = createGroundTexture()
   const ground = new Mesh(
@@ -78,7 +78,7 @@ export const createEnvironment = (scene) => {
       WORLD_TUNING.polarisMinOpacity
       + twinkle * (WORLD_TUNING.polarisMaxOpacity - WORLD_TUNING.polarisMinOpacity)
     )
-    npc6.userData.update(delta)
+    player.userData.update(delta)
   }
 
   const updateGroundPosition = (cameraPosition) => {
@@ -93,26 +93,22 @@ export const createEnvironment = (scene) => {
     ground.position.z = nextCellZ * GROUND_REPOSITION_STEP
   }
 
-  const setNpc6ControlPointsVisible = (visible) => {
-    npc6.userData.setControlPointsVisible(visible)
+  const setPlayerControlPointsVisible = (visible) => {
+    player.userData.setControlPointsVisible(visible)
   }
 
-  const playNpc6UserAction = (action) => {
-    npc6State.userActionId = action.id
-    npc6.userData.playUserAction(action)
+  const playPlayerUserAction = (action) => {
+    playerState.userActionId = action.id
+    player.userData.playUserAction(action)
   }
 
-  const previewNpc6UserAction = (action) => {
-    npc6.userData.previewUserAction(action)
+  const previewPlayerUserAction = (action) => {
+    player.userData.previewUserAction(action)
   }
 
-  const cancelNpc6UserAction = () => {
-    npc6State.userActionId = null
-    npc6.userData.cancelUserAction()
-  }
-
-  const setNpc6LocomotionInput = (input) => {
-    npc6.userData.setLocomotionInput(input)
+  const cancelPlayerUserAction = () => {
+    playerState.userActionId = null
+    player.userData.cancelUserAction()
   }
 
   const dispose = () => {
@@ -121,7 +117,7 @@ export const createEnvironment = (scene) => {
       moonLight,
       starField,
       polaris,
-      npc6,
+      player,
       ground,
     )
     starField.geometry.dispose()
@@ -130,23 +126,22 @@ export const createEnvironment = (scene) => {
     polaris.geometry.dispose()
     polaris.userData.spriteTexture?.dispose()
     polaris.material.dispose()
-    npc6.traverse((child) => {
+    player.traverse((child) => {
       if (child.isMesh) child.geometry.dispose()
     })
-    npc6.userData.material.dispose()
-    npc6.userData.dispose?.()
+    player.userData.material.dispose()
+    player.userData.dispose?.()
     ground.geometry.dispose()
     ground.material.dispose()
     groundTexture.dispose()
   }
 
   return {
-    npc6State,
-    setNpc6ControlPointsVisible,
-    playNpc6UserAction,
-    previewNpc6UserAction,
-    cancelNpc6UserAction,
-    setNpc6LocomotionInput,
+    playerState,
+    setPlayerControlPointsVisible,
+    playPlayerUserAction,
+    previewPlayerUserAction,
+    cancelPlayerUserAction,
     update,
     updateGroundPosition,
     dispose,

@@ -29,10 +29,10 @@ export const createPlayerController = ({ camera, domElement }) => {
   }
 
   const isCameraMoveKey = (code) => (
-    code === 'KeyW'
-    || code === 'KeyS'
-    || code === 'KeyA'
-    || code === 'KeyD'
+    code === 'ArrowUp'
+    || code === 'ArrowDown'
+    || code === 'ArrowLeft'
+    || code === 'ArrowRight'
   )
 
   const lockOnClick = () => {
@@ -41,19 +41,19 @@ export const createPlayerController = ({ camera, domElement }) => {
 
   const handleKeyDown = (event) => {
     if (!controls.isLocked) return
-    if (isCameraMoveKey(event.code) && !event.altKey) return
+    if (isCameraMoveKey(event.code)) event.preventDefault()
 
     switch (event.code) {
-      case 'KeyW':
+      case 'ArrowUp':
         movement.forward = true
         break
-      case 'KeyS':
+      case 'ArrowDown':
         movement.backward = true
         break
-      case 'KeyA':
+      case 'ArrowLeft':
         movement.left = true
         break
-      case 'KeyD':
+      case 'ArrowRight':
         movement.right = true
         break
       default:
@@ -62,22 +62,24 @@ export const createPlayerController = ({ camera, domElement }) => {
   }
 
   const handleKeyUp = (event) => {
+    if (isCameraMoveKey(event.code)) event.preventDefault()
+
     if (event.code === 'AltLeft' || event.code === 'AltRight') {
       resetMovement()
       return
     }
 
     switch (event.code) {
-      case 'KeyW':
+      case 'ArrowUp':
         movement.forward = false
         break
-      case 'KeyS':
+      case 'ArrowDown':
         movement.backward = false
         break
-      case 'KeyA':
+      case 'ArrowLeft':
         movement.left = false
         break
-      case 'KeyD':
+      case 'ArrowRight':
         movement.right = false
         break
       default:
