@@ -54,7 +54,20 @@ export const createEnvironment = (scene) => {
     name: 'player',
     position: [10.7, 2.15 / 2, -4],
   })
-  const tree = createTree()
+  const trees = []
+  const treeRowCount = 5
+  const treeSpacingZ = 12
+  const treeRowX = 6
+  for (let i = 0; i < treeRowCount; i++) {
+    const z = (i - (treeRowCount - 1) / 2) * treeSpacingZ
+    const leftTree = createTree()
+    leftTree.position.set(-treeRowX, 0, z)
+    trees.push(leftTree)
+    const rightTree = createTree()
+    rightTree.position.set(treeRowX, 0, z)
+    trees.push(rightTree)
+  }
+
   const playerState = {
     userActionId: null,
   }
@@ -63,7 +76,7 @@ export const createEnvironment = (scene) => {
     color: '#ff2d2d',
     depthTest: false,
   })
-const ikTargetLineMaterial = new LineBasicMaterial({
+  const ikTargetLineMaterial = new LineBasicMaterial({
     color: '#ff2d2d',
     depthTest: false,
     transparent: true,
@@ -71,7 +84,7 @@ const ikTargetLineMaterial = new LineBasicMaterial({
   })
   const ikTargetLineGroundDepth = 0.8
   const ikTargetMarkers = []
-  scene.add(starField, polaris, tree, player)
+  scene.add(starField, polaris, ...trees, player)
 
   const groundTexture = createGroundTexture()
   const ground = new Mesh(
@@ -187,7 +200,7 @@ const ikTargetLineMaterial = new LineBasicMaterial({
       moonLight,
       starField,
       polaris,
-      tree,
+      ...trees,
       player,
       ground,
     )
@@ -197,10 +210,12 @@ const ikTargetLineMaterial = new LineBasicMaterial({
     polaris.geometry.dispose()
     polaris.userData.spriteTexture?.dispose()
     polaris.material.dispose()
-    tree.traverse((child) => {
-      if (child.isMesh) child.geometry.dispose()
+    trees.forEach((tree) => {
+      tree.traverse((child) => {
+        if (child.isMesh) child.geometry.dispose()
+      })
+      tree.userData.dispose?.()
     })
-    tree.userData.dispose?.()
     player.traverse((child) => {
       if (child.userData.isIkTargetMarker) return
       if (child.isMesh) child.geometry.dispose()
