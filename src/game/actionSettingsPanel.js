@@ -1,7 +1,12 @@
-import { PLAYER_ACTION_BONE_OPTIONS } from './createPlayer.js'
+import {
+  PLAYER_ACTION_BONE_OPTIONS,
+  PLAYER_ACTION_IK_CHAIN_OPTIONS,
+  PLAYER_ACTION_IK_DEFAULT_TARGETS,
+} from './createPlayer.js'
 
 const ACTIONS_STORAGE_KEY = 'qixing-town:user-actions'
 const PANEL_STATE_STORAGE_KEY = 'qixing-town:action-settings-panel'
+const IK_KEYBOARD_STEP = 0.03
 
 const JOINT_DIRECTIONS = [
   { value: 'forward', label: '向前' },
@@ -139,7 +144,12 @@ export const createActionSettingsPanel = ({ app }) => {
     : null
   let visible = initialPanelState.visible
   let lastCursorVisible = null
+  let draftActionType = 'fk'
   let draftControls = []
+  let draftIkTargets = []
+  let activeIkTargetId = null
+  let ikKeyboardIntervalId = 0
+  const activeIkKeyCodes = new Set()
 
   const button = document.createElement('button')
   const panel = document.createElement('section')
@@ -147,6 +157,10 @@ export const createActionSettingsPanel = ({ app }) => {
   const list = document.createElement('div')
   const emptyText = document.createElement('div')
   const nameInput = createTextInput()
+  const typeSelect = createSelectInput([
+    { value: 'fk', label: 'FK' },
+    { value: 'ik', label: 'IK' },
+  ])
   const controlList = document.createElement('div')
   const emptyControlText = document.createElement('div')
   const addButton = document.createElement('button')
@@ -239,6 +253,7 @@ export const createActionSettingsPanel = ({ app }) => {
   })
   form.append(
     createField({ label: '动作名称', input: nameInput }),
+    createField({ label: '控制类型', input: typeSelect }),
   )
 
   const controlTitle = document.createElement('div')
@@ -360,12 +375,24 @@ export const createActionSettingsPanel = ({ app }) => {
     detailPanel.style.display = visible && action ? 'block' : 'none'
     addBar.style.display = 'flex'
     nameInput.disabled = disabled
+    typeSelect.disabled = disabled
     saveButton.disabled = disabled
     deleteButton.disabled = disabled
     cancelButton.disabled = disabled
     addControlButton.disabled = disabled
     nameInput.value = action?.label ?? ''
+    draftActionType = action?.type === 'ik' ? 'ik' : 'fk'
+    typeSelect.value = draftActionType
     draftControls = Array.isArray(action?.controls) ? action.controls.map((control) => ({ ...control })) : []
+    draftIkTargets = Array.isArray(action?.ikTargets)
+      ? action.ikTargets.map((target) => ({
+        ...target,
+        position: { ...target.position },
+      }))
+      : []
+    activeIkTargetId = draftIkTargets.some((target) => target.id === activeIkTargetId)
+      ? activeIkTargetId
+      : draftIkTargets[0]?.id ?? null
     renderControlList()
     dispatchDraftPreview()
   }
@@ -377,9 +404,119 @@ export const createActionSettingsPanel = ({ app }) => {
     dispatchDraftPreview()
   }
 
+  const updateDraftIkTarget = ({ id, key, value }) => {
+    draftIkTargets = draftIkTargets.map((target) => {
+      if (target.id !== id) return target
+
+      if (key === 'chain') {
+        return {
+          ...target,
+          chain: value,
+          position: { ...PLAYER_ACTION_IK_DEFAULT_TARGETS[value] },
+        }
+      }
+
+      return {
+        ...target,
+        position: {
+          ...target.position,
+          [key]: value,
+        },
+      }
+    })
+    dispatchDraftPreview()
+  }
+
+  const setActiveIkTarget = (id) => {
+    activeIkTargetId = id
+  }
+
   const renderControlList = () => {
     controlList.replaceChildren()
-    emptyControlText.style.display = draftControls.length === 0 ? 'block' : 'none'
+    const isIk = draftActionType === 'ik'
+    const rows = isIk ? draftIkTargets : draftControls
+
+    controlTitle.textContent = isIk ? 'IK端点' : '关节运动'
+    addControlButton.textContent = isIk ? '新增IK' : '新增关节'
+    emptyControlText.textContent = isIk ? '暂无IK端点' : '暂无关节运动'
+    controlHeader.replaceChildren(...(isIk ? ['IK链', 'X', 'Y', 'Z', ''] : ['关节', '方向', '角度', '']).map((label) => {
+      const item = document.createElement('span')
+      item.textContent = label
+      Object.assign(item.style, {
+        color: 'rgba(238, 245, 238, 0.62)',
+        fontSize: '12px',
+      })
+      return item
+    }))
+    controlHeader.style.gridTemplateColumns = isIk ? '1fr 64px 64px 64px 52px' : '1fr 1fr 80px 52px'
+    emptyControlText.style.display = rows.length === 0 ? 'block' : 'none'
+
+    if (isIk) {
+      draftIkTargets.forEach((target) => {
+        const row = document.createElement('div')
+        const chainSelect = createSelectInput(PLAYER_ACTION_IK_CHAIN_OPTIONS)
+        const xInput = createTextInput()
+        const yInput = createTextInput()
+        const zInput = createTextInput()
+        const removeButton = document.createElement('button')
+
+        chainSelect.value = target.chain
+        ;[
+          [xInput, 'x'],
+          [yInput, 'y'],
+          [zInput, 'z'],
+        ].forEach(([input, key]) => {
+          input.type = 'number'
+          input.step = '0.01'
+          input.value = String(target.position?.[key] ?? 0)
+        })
+        removeButton.type = 'button'
+        removeButton.textContent = '删除'
+        applyButtonStyle(removeButton, 'danger')
+        Object.assign(row.style, {
+          display: 'grid',
+          gridTemplateColumns: '1fr 64px 64px 64px 52px',
+          gap: '8px',
+          alignItems: 'center',
+          padding: '4px',
+          border: '1px solid',
+          borderColor: target.id === activeIkTargetId ? 'rgba(83, 127, 214, 0.72)' : 'transparent',
+          borderRadius: '6px',
+        })
+
+        row.addEventListener('pointerdown', () => {
+          activeIkTargetId = target.id
+        })
+        chainSelect.addEventListener('change', () => {
+          activeIkTargetId = target.id
+          updateDraftIkTarget({ id: target.id, key: 'chain', value: chainSelect.value })
+          renderControlList()
+        })
+        ;[
+          [xInput, 'x'],
+          [yInput, 'y'],
+          [zInput, 'z'],
+        ].forEach(([input, key]) => {
+          input.addEventListener('focus', () => {
+            setActiveIkTarget(target.id)
+          })
+          input.addEventListener('input', () => {
+            activeIkTargetId = target.id
+            updateDraftIkTarget({ id: target.id, key, value: Number(input.value) })
+          })
+        })
+        removeButton.addEventListener('click', () => {
+          draftIkTargets = draftIkTargets.filter((item) => item.id !== target.id)
+          activeIkTargetId = draftIkTargets[0]?.id ?? null
+          renderControlList()
+          dispatchDraftPreview()
+        })
+
+        row.append(chainSelect, xInput, yInput, zInput, removeButton)
+        controlList.append(row)
+      })
+      return
+    }
 
     draftControls.forEach((control) => {
       const row = document.createElement('div')
@@ -481,10 +618,16 @@ export const createActionSettingsPanel = ({ app }) => {
       && JOINT_DIRECTIONS.some((direction) => direction.value === control.direction)
       && Number.isFinite(control.angle)
     ))
+    const ikTargets = draftIkTargets.filter((target) => (
+      PLAYER_ACTION_IK_CHAIN_OPTIONS.some((chain) => chain.value === target.chain)
+      && Number.isFinite(target.position?.x)
+      && Number.isFinite(target.position?.y)
+      && Number.isFinite(target.position?.z)
+    ))
 
     actions = actions.map((item) => (
       item.id === action.id
-        ? { ...item, label, controls }
+        ? { ...item, label, type: draftActionType, controls, ikTargets }
         : item
     ))
     persistAndRender()
@@ -492,6 +635,25 @@ export const createActionSettingsPanel = ({ app }) => {
 
   const handleAddControl = () => {
     if (!getSelectedAction()) return
+
+    if (draftActionType === 'ik') {
+      const chain = PLAYER_ACTION_IK_CHAIN_OPTIONS[0]?.value
+      if (!chain) return
+      const id = createId()
+
+      draftIkTargets = [
+        ...draftIkTargets,
+        {
+          id,
+          chain,
+          position: { ...PLAYER_ACTION_IK_DEFAULT_TARGETS[chain] },
+        },
+      ]
+      activeIkTargetId = id
+      renderControlList()
+      dispatchDraftPreview()
+      return
+    }
 
     draftControls = [
       ...draftControls,
@@ -512,13 +674,25 @@ export const createActionSettingsPanel = ({ app }) => {
     return {
       ...action,
       label: label || action.label,
+      type: draftActionType,
       controls: draftControls.map((control) => ({ ...control })),
+      ikTargets: draftIkTargets.map((target) => ({
+        ...target,
+        position: { ...target.position },
+      })),
     }
+  }
+
+  const clearIkTargetMarkers = () => {
+    app.dispatchEvent(new CustomEvent('qixing-town:clear-ik-target-markers'))
   }
 
   const dispatchDraftPreview = () => {
     const action = getSelectedAction()
-    if (!action) return
+    if (!visible || detailPanel.style.display !== 'block' || !action) {
+      clearIkTargetMarkers()
+      return
+    }
 
     app.dispatchEvent(new CustomEvent('qixing-town:play-action', {
       detail: {
@@ -549,12 +723,102 @@ export const createActionSettingsPanel = ({ app }) => {
     syncForm()
   }
 
+  const handleTypeChange = () => {
+    draftActionType = typeSelect.value === 'ik' ? 'ik' : 'fk'
+    activeIkTargetId = draftIkTargets[0]?.id ?? null
+    renderControlList()
+    dispatchDraftPreview()
+  }
+
+  const isIkKeyboardActive = () => (
+    visible
+    && draftActionType === 'ik'
+    && getSelectedAction()
+    && detailPanel.style.display === 'block'
+  )
+
+  const getIkKeyOffset = (code) => {
+    if (code === 'KeyW') return { z: -IK_KEYBOARD_STEP }
+    if (code === 'KeyS') return { z: IK_KEYBOARD_STEP }
+    if (code === 'KeyA') return { x: -IK_KEYBOARD_STEP }
+    if (code === 'KeyD') return { x: IK_KEYBOARD_STEP }
+    if (code === 'Space') return { y: IK_KEYBOARD_STEP }
+    if (code === 'ShiftLeft' || code === 'ShiftRight') return { y: -IK_KEYBOARD_STEP }
+
+    return null
+  }
+
+  const applyIkKeyboardOffset = (offset) => {
+    if (!isIkKeyboardActive()) return
+
+    const targetId = draftIkTargets.some((target) => target.id === activeIkTargetId)
+      ? activeIkTargetId
+      : draftIkTargets[0]?.id
+    if (!targetId) return
+
+    activeIkTargetId = targetId
+    draftIkTargets = draftIkTargets.map((target) => {
+      if (target.id !== targetId) return target
+
+      return {
+        ...target,
+        position: {
+          x: (target.position?.x ?? 0) + (offset.x ?? 0),
+          y: (target.position?.y ?? 0) + (offset.y ?? 0),
+          z: (target.position?.z ?? 0) + (offset.z ?? 0),
+        },
+      }
+    })
+    renderControlList()
+    dispatchDraftPreview()
+  }
+
+  const applyActiveIkKeyboardOffsets = () => {
+    if (!isIkKeyboardActive()) {
+      activeIkKeyCodes.clear()
+      window.clearInterval(ikKeyboardIntervalId)
+      ikKeyboardIntervalId = 0
+      return
+    }
+
+    activeIkKeyCodes.forEach((code) => {
+      applyIkKeyboardOffset(getIkKeyOffset(code))
+    })
+  }
+
+  const handleIkKeyDown = (event) => {
+    if (!visible || draftActionType !== 'ik' || !getSelectedAction()) return
+    if (detailPanel.style.display !== 'block') return
+    if (event.target === nameInput || event.target === typeSelect) return
+
+    const offset = getIkKeyOffset(event.code)
+    if (!offset) return
+
+    event.preventDefault()
+    activeIkKeyCodes.add(event.code)
+    if (!event.repeat) applyIkKeyboardOffset(offset)
+    if (!ikKeyboardIntervalId) {
+      ikKeyboardIntervalId = window.setInterval(applyActiveIkKeyboardOffsets, 48)
+    }
+  }
+
+  const handleIkKeyUp = (event) => {
+    activeIkKeyCodes.delete(event.code)
+    if (activeIkKeyCodes.size > 0) return
+
+    window.clearInterval(ikKeyboardIntervalId)
+    ikKeyboardIntervalId = 0
+  }
+
   button.addEventListener('click', handleToggle)
+  typeSelect.addEventListener('change', handleTypeChange)
   addButton.addEventListener('click', handleAdd)
   addControlButton.addEventListener('click', handleAddControl)
   saveButton.addEventListener('click', handleSave)
   deleteButton.addEventListener('click', handleDelete)
   cancelButton.addEventListener('click', handleCancel)
+  window.addEventListener('keydown', handleIkKeyDown)
+  window.addEventListener('keyup', handleIkKeyUp)
   window.addEventListener('resize', syncDetailPanelPosition)
     ;[button, panel, detailPanel].forEach((element) => {
       element.addEventListener('pointerdown', stopPointerLock)
@@ -578,18 +842,25 @@ export const createActionSettingsPanel = ({ app }) => {
       if (!cursorVisible) {
         panel.style.display = 'none'
         detailPanel.style.display = 'none'
+        clearIkTargetMarkers()
       } else {
         panel.style.display = visible ? 'block' : 'none'
         detailPanel.style.display = visible && getSelectedAction() ? 'block' : 'none'
+        dispatchDraftPreview()
       }
     },
     dispose: () => {
+      clearIkTargetMarkers()
       button.removeEventListener('click', handleToggle)
+      typeSelect.removeEventListener('change', handleTypeChange)
       addButton.removeEventListener('click', handleAdd)
       addControlButton.removeEventListener('click', handleAddControl)
       saveButton.removeEventListener('click', handleSave)
       deleteButton.removeEventListener('click', handleDelete)
       cancelButton.removeEventListener('click', handleCancel)
+      window.removeEventListener('keydown', handleIkKeyDown)
+      window.removeEventListener('keyup', handleIkKeyUp)
+      window.clearInterval(ikKeyboardIntervalId)
       window.removeEventListener('resize', syncDetailPanelPosition)
         ;[button, panel, detailPanel].forEach((element) => {
           element.removeEventListener('pointerdown', stopPointerLock)

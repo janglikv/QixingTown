@@ -242,6 +242,10 @@ export const createSceneApp = (app) => {
     }
   }
 
+  const onClearIkTargetMarkers = () => {
+    environment.clearPlayerIkTargetMarkers()
+  }
+
   const rebuildActionWheel = () => {
     if (
       environment.playerState.userActionId
@@ -259,6 +263,7 @@ export const createSceneApp = (app) => {
   window.addEventListener('keydown', onKeyDown)
   window.addEventListener('keyup', onKeyUp)
   app.addEventListener('qixing-town:play-action', onPlayUserAction)
+  app.addEventListener('qixing-town:clear-ik-target-markers', onClearIkTargetMarkers)
   app.addEventListener('qixing-town:user-actions-changed', rebuildActionWheel)
 
   let animationFrameId = 0
@@ -294,6 +299,7 @@ export const createSceneApp = (app) => {
     window.removeEventListener('keydown', onKeyDown)
     window.removeEventListener('keyup', onKeyUp)
     app.removeEventListener('qixing-town:play-action', onPlayUserAction)
+    app.removeEventListener('qixing-town:clear-ik-target-markers', onClearIkTargetMarkers)
     app.removeEventListener('qixing-town:user-actions-changed', rebuildActionWheel)
     persistCameraStateOnUnload()
     controlPointToggle.dispose()

@@ -57,22 +57,31 @@ const PLAYER_DEFINITION = {
     children: {
       hipLeft: {
         key: 'hipLeft',
-        cname: '左胯',
+        cname: '右胯',
         length: 0.1,
         direction: [-1, 0, 0],
         children: {
           kneeLeft: {
             key: 'kneeLeft',
-            cname: '左腿',
+            cname: '右腿',
             length: 0.35,
             direction: [-0.08, -0.34, 0],
+            jointLimit: {
+              x: [-80, 80],
+              y: [-35, 55],
+              z: [-35, 35],
+            },
             children: {
               footLeft: {
                 key: 'footLeft',
-                cname: '左脚',
+                cname: '右脚',
                 length: 0.62,
                 direction: [-0.04, -0.62, 0],
                 supportContact: true,
+                jointLimit: {
+                  minAngle: 25,
+                  maxAngle: 172,
+                },
                 ik: {
                   up: 2,
                 },
@@ -83,22 +92,31 @@ const PLAYER_DEFINITION = {
       },
       hipRight: {
         key: 'hipRight',
-        cname: '右胯',
+        cname: '左胯',
         length: 0.1,
         direction: [1, 0, 0],
         children: {
           kneeRight: {
             key: 'kneeRight',
-            cname: '右腿',
+            cname: '左腿',
             length: 0.35,
             direction: [0.08, -0.34, 0],
+            jointLimit: {
+              x: [-80, 80],
+              y: [-55, 35],
+              z: [-35, 35],
+            },
             children: {
               footRight: {
                 key: 'footRight',
-                cname: '右脚',
+                cname: '左脚',
                 length: 0.62,
                 direction: [0.04, -0.62, 0],
                 supportContact: true,
+                jointLimit: {
+                  minAngle: 25,
+                  maxAngle: 172,
+                },
                 ik: {
                   up: 2,
                 },
@@ -121,21 +139,33 @@ const PLAYER_DEFINITION = {
           },
           shoulderLeft: {
             key: 'shoulderLeft',
-            cname: '左肩',
+            cname: '右肩',
             length: 0.14,
             direction: [-1, 0, 0],
             children: {
               elbowLeft: {
                 key: 'elbowLeft',
-                cname: '左臂',
+                cname: '右臂',
                 length: 0.35,
                 direction: [-0.1, -0.34, 0],
+                jointLimit: {
+                  x: [-70, 120],
+                  y: [-35, 95],
+                  z: [-55, 55],
+                },
                 children: {
                   handLeft: {
                     key: 'handLeft',
-                    cname: '左手',
+                    cname: '右手',
                     length: 0.32,
                     direction: [-0.04, -0.32, 0],
+                    jointLimit: {
+                      minAngle: 35,
+                      maxAngle: 172,
+                    },
+                    ik: {
+                      up: 2,
+                    },
                   },
                 },
               },
@@ -143,21 +173,33 @@ const PLAYER_DEFINITION = {
           },
           shoulderRight: {
             key: 'shoulderRight',
-            cname: '右肩',
+            cname: '左肩',
             length: 0.14,
             direction: [1, 0, 0],
             children: {
               elbowRight: {
                 key: 'elbowRight',
-                cname: '右臂',
+                cname: '左臂',
                 length: 0.35,
                 direction: [0.1, -0.34, 0],
+                jointLimit: {
+                  x: [-70, 120],
+                  y: [-95, 35],
+                  z: [-55, 55],
+                },
                 children: {
                   handRight: {
                     key: 'handRight',
-                    cname: '右手',
+                    cname: '左手',
                     length: 0.32,
                     direction: [0.04, -0.32, 0],
+                    jointLimit: {
+                      minAngle: 35,
+                      maxAngle: 172,
+                    },
+                    ik: {
+                      up: 2,
+                    },
                   },
                 },
               },
@@ -189,6 +231,26 @@ const PLAYER_DEFINITION = {
 
 export const PLAYER_MODEL_RIG = createRigDefinition(PLAYER_DEFINITION)
 export const PLAYER_ACTION_BONE_OPTIONS = PLAYER_MODEL_RIG.actionBoneOptions
+export const PLAYER_ACTION_IK_CHAIN_OPTIONS = Object.values(PLAYER_MODEL_RIG.ikChainsByKey)
+  .map((chain) => ({
+    value: chain.key,
+    label: chain.cname,
+  }))
+export const PLAYER_ACTION_IK_DEFAULT_TARGETS = Object.fromEntries(
+  Object.values(PLAYER_MODEL_RIG.ikChainsByKey).map((chain) => {
+    const joints = createRigJointPositions(PLAYER_MODEL_RIG)
+    const end = joints[chain.end]
+
+    return [
+      chain.key,
+      {
+        x: end.x,
+        y: end.y,
+        z: end.z,
+      },
+    ]
+  }),
+)
 
 export const createPlayerJointPositions = () => createRigJointPositions(PLAYER_MODEL_RIG)
 

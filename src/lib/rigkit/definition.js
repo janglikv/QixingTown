@@ -70,6 +70,8 @@ const createIkChainsByKey = (boneDefinitions) => (
           root: root.key,
           mid: mid.key,
           end: bone.key,
+          rootJointLimit: mid.jointLimit,
+          midJointLimit: bone.jointLimit,
         },
       ]
     })

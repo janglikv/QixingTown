@@ -3,9 +3,14 @@ import {
   Color,
   DirectionalLight,
   FogExp2,
+  BufferGeometry,
+  Line,
+  LineBasicMaterial,
   Mesh,
+  MeshBasicMaterial,
   MeshStandardMaterial,
   PlaneGeometry,
+  SphereGeometry,
 } from 'three'
 import {
   GROUND_REPOSITION_STEP,
@@ -53,6 +58,19 @@ export const createEnvironment = (scene) => {
   const playerState = {
     userActionId: null,
   }
+  const ikTargetGeometry = new SphereGeometry(0.032, 16, 12)
+  const ikTargetMaterial = new MeshBasicMaterial({
+    color: '#ff2d2d',
+    depthTest: false,
+  })
+const ikTargetLineMaterial = new LineBasicMaterial({
+    color: '#ff2d2d',
+    depthTest: false,
+    transparent: true,
+    opacity: 0.65,
+  })
+  const ikTargetLineGroundDepth = 0.8
+  const ikTargetMarkers = []
   scene.add(starField, polaris, tree, player)
 
   const groundTexture = createGroundTexture()
@@ -99,17 +117,62 @@ export const createEnvironment = (scene) => {
     player.userData.setControlPointsVisible(visible)
   }
 
+  const syncPlayerIkTargetMarkers = (action) => {
+    const targets = action?.type === 'ik' && Array.isArray(action.ikTargets)
+      ? action.ikTargets
+      : []
+
+    while (ikTargetMarkers.length < targets.length) {
+      const marker = new Mesh(ikTargetGeometry, ikTargetMaterial)
+      const line = new Line(new BufferGeometry(), ikTargetLineMaterial)
+
+      marker.renderOrder = 100
+      marker.userData.isIkTargetMarker = true
+      line.renderOrder = 99
+      line.userData.isIkTargetMarker = true
+      marker.userData.groundLine = line
+      ikTargetMarkers.push(marker)
+      player.add(line)
+      player.add(marker)
+    }
+
+    ikTargetMarkers.forEach((marker, index) => {
+      const line = marker.userData.groundLine
+      const target = targets[index]
+      const position = target?.position
+      const visible = (
+        Number.isFinite(position?.x)
+        && Number.isFinite(position?.y)
+        && Number.isFinite(position?.z)
+      )
+
+      marker.visible = visible
+      line.visible = visible
+      if (visible) {
+        marker.position.set(position.x, position.y, position.z)
+        // 调试目标点的垂线固定在玩家局部地面上，便于从任意视角判断水平落点。
+        line.geometry.setFromPoints([
+          marker.position.clone().setY(-ikTargetLineGroundDepth),
+          marker.position.clone(),
+        ])
+      }
+    })
+  }
+
   const playPlayerUserAction = (action) => {
     playerState.userActionId = action.id
+    syncPlayerIkTargetMarkers(null)
     player.userData.playUserAction(action)
   }
 
   const previewPlayerUserAction = (action) => {
+    syncPlayerIkTargetMarkers(action)
     player.userData.previewUserAction(action)
   }
 
   const cancelPlayerUserAction = () => {
     playerState.userActionId = null
+    syncPlayerIkTargetMarkers(null)
     player.userData.cancelUserAction()
   }
 
@@ -134,10 +197,17 @@ export const createEnvironment = (scene) => {
     })
     tree.userData.dispose?.()
     player.traverse((child) => {
+      if (child.userData.isIkTargetMarker) return
       if (child.isMesh) child.geometry.dispose()
     })
     player.userData.material.dispose()
     player.userData.dispose?.()
+    ikTargetGeometry.dispose()
+    ikTargetMaterial.dispose()
+    ikTargetLineMaterial.dispose()
+    ikTargetMarkers.forEach((marker) => {
+      marker.userData.groundLine?.geometry.dispose()
+    })
     ground.geometry.dispose()
     ground.material.dispose()
     groundTexture.dispose()
@@ -149,6 +219,7 @@ export const createEnvironment = (scene) => {
     playPlayerUserAction,
     previewPlayerUserAction,
     cancelPlayerUserAction,
+    clearPlayerIkTargetMarkers: () => syncPlayerIkTargetMarkers(null),
     update,
     updateGroundPosition,
     dispose,

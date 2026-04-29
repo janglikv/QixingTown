@@ -55,8 +55,10 @@ export const createRigFigure = ({
   const actionOptions = actions === true ? {} : actions
   const userAction = actionOptions
     ? createRigActionController({
+      figure,
       bones: skeleton.bones,
       controlGroupsByKey: actionOptions.controlGroupsByKey ?? rig.controlGroupsByKey,
+      ikChainsByKey: actionOptions.ikChainsByKey ?? rig.ikChainsByKey,
       resolveControlRotation: actionOptions.resolveControlRotation,
       transitionDuration: actionOptions.transitionDuration,
     })
