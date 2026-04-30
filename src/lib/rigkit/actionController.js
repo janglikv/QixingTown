@@ -14,8 +14,8 @@ const smoothStep = (value) => {
 export const resolveDirectionalControlRotation = ({ bone, direction, angle }) => {
   const value = angle * DEG_TO_RAD
 
-  if (direction === 'forward') return { axis: 'x', value: -value }
-  if (direction === 'backward') return { axis: 'x', value }
+  if (direction === 'forward') return { axis: 'x', value }
+  if (direction === 'backward') return { axis: 'x', value: -value }
   if (direction === 'up') return { axis: 'z', value: bone.endsWith('Left') ? -value : value }
   if (direction === 'down') return { axis: 'z', value: bone.endsWith('Left') ? value : -value }
 

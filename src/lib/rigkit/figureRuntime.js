@@ -38,7 +38,6 @@ export const createRigFigure = ({
     joints,
     contactKeys: rig.supportContactKeys,
   })
-  figure.userData.lockedContactKeys = rig.supportContactKeys
   figure.userData.setControlPointsVisible = (visible) => {
     figure.userData.controlPointGroup.visible = visible
   }

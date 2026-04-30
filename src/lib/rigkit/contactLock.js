@@ -1,9 +1,6 @@
 // 提供把指定骨骼接触点锁定在世界坐标上的通用能力，用于避免姿态更新后支撑点漂移。
 import { Vector3 } from 'three'
-import {
-  getBoneWorldPosition,
-  readSkeletonJointPositions,
-} from './skeleton.js'
+import { getBoneWorldPosition } from './skeleton.js'
 
 const DEFAULT_HEIGHT_EPSILON = 0.001
 
@@ -17,8 +14,6 @@ export const createRigContactLocks = ({ figure, joints, contactKeys }) => (
 )
 
 export const lockRigContacts = ({
-  rig,
-  figure,
   bones,
   skeletonRoot,
   contactLocks,
@@ -29,17 +24,22 @@ export const lockRigContacts = ({
   const lockedContacts = lockedContactKeys?.length
     ? contactEntries.filter(([key]) => lockedContactKeys.includes(key))
     : (() => {
-      const joints = readSkeletonJointPositions({ rig, figure, bones })
-      const lowestY = Math.min(...contactEntries.map(([key]) => joints[key].y))
+      const currentContacts = contactEntries.map(([key, contactLock]) => [
+        key,
+        contactLock,
+        getBoneWorldPosition(bones[key]),
+      ])
+      const lowestY = Math.min(...currentContacts.map(([, , position]) => position.y))
 
-      return contactEntries.filter(([key]) => (
-        joints[key].y <= lowestY + heightEpsilon
+      // 未显式指定锁定点时，只用当前最低的支撑点作为落地基准。
+      return currentContacts.filter(([, , position]) => (
+        position.y <= lowestY + heightEpsilon
       ))
     })()
 
   const offset = lockedContacts
-    .reduce((sum, [key, contactLock]) => (
-      sum.add(contactLock.worldTarget.clone().sub(getBoneWorldPosition(bones[key])))
+    .reduce((sum, [key, contactLock, currentPosition]) => (
+      sum.add(contactLock.worldTarget.clone().sub(currentPosition ?? getBoneWorldPosition(bones[key])))
     ), new Vector3())
     .multiplyScalar(1 / lockedContacts.length)
 

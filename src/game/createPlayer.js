@@ -11,7 +11,7 @@ import { STICK_FIGURE_HEIGHT } from './stickFigureParts.js'
 
 const HEAD_EYES_TEXTURE_SIZE = 512
 const HEAD_EYES_FONT_SIZE = 180
-const HEAD_EYES_YAW = -Math.PI / 2
+const HEAD_EYES_YAW = Math.PI / 2
 
 const createHeadEyesTexture = () => {
   const canvas = document.createElement('canvas')
@@ -55,33 +55,25 @@ const PLAYER_DEFINITION = {
     key: 'hip',
     cname: '身体',
     children: {
+      // Player 本地坐标里 x < 0 是左侧，z < 0 是正面，和眼睛朝向保持一致。
       hipLeft: {
         key: 'hipLeft',
-        cname: '右胯',
+        cname: '左胯',
         length: 0.1,
         direction: [-1, 0, 0],
         children: {
           kneeLeft: {
             key: 'kneeLeft',
-            cname: '右腿',
+            cname: '左腿',
             length: 0.35,
             direction: [-0.08, -0.34, 0],
-            jointLimit: {
-              x: [-80, 80],
-              y: [-35, 55],
-              z: [-35, 35],
-            },
             children: {
               footLeft: {
                 key: 'footLeft',
-                cname: '右脚',
+                cname: '左脚',
                 length: 0.62,
                 direction: [-0.04, -0.62, 0],
                 supportContact: true,
-                jointLimit: {
-                  minAngle: 25,
-                  maxAngle: 172,
-                },
                 ik: {
                   up: 2,
                 },
@@ -92,31 +84,22 @@ const PLAYER_DEFINITION = {
       },
       hipRight: {
         key: 'hipRight',
-        cname: '左胯',
+        cname: '右胯',
         length: 0.1,
         direction: [1, 0, 0],
         children: {
           kneeRight: {
             key: 'kneeRight',
-            cname: '左腿',
+            cname: '右腿',
             length: 0.35,
             direction: [0.08, -0.34, 0],
-            jointLimit: {
-              x: [-80, 80],
-              y: [-55, 35],
-              z: [-35, 35],
-            },
             children: {
               footRight: {
                 key: 'footRight',
-                cname: '左脚',
+                cname: '右脚',
                 length: 0.62,
                 direction: [0.04, -0.62, 0],
                 supportContact: true,
-                jointLimit: {
-                  minAngle: 25,
-                  maxAngle: 172,
-                },
                 ik: {
                   up: 2,
                 },
@@ -139,30 +122,21 @@ const PLAYER_DEFINITION = {
           },
           shoulderLeft: {
             key: 'shoulderLeft',
-            cname: '右肩',
+            cname: '左肩',
             length: 0.14,
             direction: [-1, 0, 0],
             children: {
               elbowLeft: {
                 key: 'elbowLeft',
-                cname: '右臂',
+                cname: '左臂',
                 length: 0.35,
                 direction: [-0.1, -0.34, 0],
-                jointLimit: {
-                  x: [-70, 120],
-                  y: [-35, 95],
-                  z: [-55, 55],
-                },
                 children: {
                   handLeft: {
                     key: 'handLeft',
-                    cname: '右手',
+                    cname: '左手',
                     length: 0.32,
                     direction: [-0.04, -0.32, 0],
-                    jointLimit: {
-                      minAngle: 35,
-                      maxAngle: 172,
-                    },
                     ik: {
                       up: 2,
                     },
@@ -173,30 +147,21 @@ const PLAYER_DEFINITION = {
           },
           shoulderRight: {
             key: 'shoulderRight',
-            cname: '左肩',
+            cname: '右肩',
             length: 0.14,
             direction: [1, 0, 0],
             children: {
               elbowRight: {
                 key: 'elbowRight',
-                cname: '左臂',
+                cname: '右臂',
                 length: 0.35,
                 direction: [0.1, -0.34, 0],
-                jointLimit: {
-                  x: [-70, 120],
-                  y: [-95, 35],
-                  z: [-55, 55],
-                },
                 children: {
                   handRight: {
                     key: 'handRight',
-                    cname: '左手',
+                    cname: '右手',
                     length: 0.32,
                     direction: [0.04, -0.32, 0],
-                    jointLimit: {
-                      minAngle: 35,
-                      maxAngle: 172,
-                    },
                     ik: {
                       up: 2,
                     },
