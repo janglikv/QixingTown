@@ -3,14 +3,9 @@ import {
   Color,
   DirectionalLight,
   FogExp2,
-  BufferGeometry,
-  Line,
-  LineBasicMaterial,
   Mesh,
-  MeshBasicMaterial,
   MeshStandardMaterial,
   PlaneGeometry,
-  SphereGeometry,
   Vector3,
 } from 'three'
 import {
@@ -21,6 +16,7 @@ import {
 } from '../config.js'
 import { createGroundTexture } from './createGroundTexture.js'
 import { createPlayer, createPlayerWalkIkAction, PLAYER_MODEL_RIG } from './createPlayer.js'
+import { createHelperMarkerSystem } from './helperMarkers.js'
 import { createPolaris, createStarField } from './createStarField.js'
 import { createTree } from './createTree.js'
 
@@ -76,19 +72,11 @@ export const createEnvironment = (scene) => {
     active: false,
     elapsed: 0,
   }
-  const ikTargetGeometry = new SphereGeometry(0.032, 16, 12)
-  const ikTargetMaterial = new MeshBasicMaterial({
-    color: '#ff2d2d',
-    depthTest: false,
-  })
-  const ikTargetLineMaterial = new LineBasicMaterial({
-    color: '#ff2d2d',
-    depthTest: false,
-    transparent: true,
-    opacity: 0.65,
-  })
   const ikTargetLineGroundDepth = 0.8
-  const ikTargetMarkers = []
+  const ikTargetGroundCrossSize = 0.32
+  const centerOfMassGroundCrossSize = 2
+  const helperLineWidth = 0.004
+  const helperMarkers = createHelperMarkerSystem({ root: scene })
   scene.add(starField, polaris, ...trees, player)
 
   const groundTexture = createGroundTexture()
@@ -108,6 +96,8 @@ export const createEnvironment = (scene) => {
   let lastGroundCellX = Number.NaN
   let lastGroundCellZ = Number.NaN
   let polarisTwinkleTime = 0
+  const centerOfMass = new Vector3()
+  let playerCenterOfMassVisible = false
 
   const update = (delta) => {
     polarisTwinkleTime += delta * WORLD_TUNING.polarisTwinkleSpeed
@@ -122,6 +112,7 @@ export const createEnvironment = (scene) => {
       player.userData.previewUserAction(createPlayerWalkIkAction(playerWalkState.elapsed))
     }
     player.userData.update(delta)
+    syncPlayerCenterOfMassMarker()
   }
 
   const updateGroundPosition = (cameraPosition) => {
@@ -138,6 +129,73 @@ export const createEnvironment = (scene) => {
 
   const setPlayerControlPointsVisible = (visible) => {
     player.userData.setControlPointsVisible(visible)
+  }
+
+  const setPlayerCenterOfMassVisible = (visible) => {
+    playerCenterOfMassVisible = visible
+    syncPlayerCenterOfMassMarker()
+  }
+
+  const getPlayerCenterOfMass = () => {
+    let totalMass = 0
+
+    centerOfMass.set(0, 0, 0)
+    player.updateMatrixWorld(true)
+    PLAYER_MODEL_RIG.boneNodes.forEach((bone) => {
+      if (typeof bone.parentKey !== 'string') return
+
+      const parent = player.userData.bones[bone.parentKey]
+      const child = player.userData.bones[bone.key]
+      if (!parent || !child) return
+
+      const mass = bone.length * (bone.massScale ?? 1)
+      const segmentCenter = parent
+        .getWorldPosition(new Vector3())
+        .add(child.getWorldPosition(new Vector3()))
+        .multiplyScalar(0.5)
+
+      centerOfMass.add(segmentCenter.multiplyScalar(mass))
+      totalMass += mass
+    })
+
+    if (totalMass <= 0) return null
+
+    // 当前只关心水平面上的质心投影，y 固定到地面，避免垂直抬高手脚影响显示判断。
+    centerOfMass.multiplyScalar(1 / totalMass)
+    centerOfMass.y = 0
+
+    return centerOfMass.clone()
+  }
+
+  const syncPlayerCenterOfMassMarker = () => {
+    if (!playerCenterOfMassVisible) {
+      helperMarkers.hide('player-center-of-mass')
+      return
+    }
+
+    const position = getPlayerCenterOfMass()
+    if (!position) return
+
+    // 质心和地面投影都使用世界坐标，避免和 player 局部坐标混淆。
+    helperMarkers.markPoint({
+      id: 'player-center-of-mass',
+      position,
+      color: '#2f7dff',
+      opacity: 0.9,
+      visible: true,
+      verticalLine: {
+        fromY: 0,
+        toY: 2,
+        width: helperLineWidth,
+        opacity: 0.9,
+      },
+      groundCross: {
+        halfSize: centerOfMassGroundCrossSize,
+        y: 0.01,
+        width: helperLineWidth,
+        opacity: 0.9,
+      },
+    })
   }
 
   const getPlayerIkTargetPosition = (chainKey) => {
@@ -161,24 +219,11 @@ export const createEnvironment = (scene) => {
     const targets = action?.type === 'ik' && Array.isArray(action.ikTargets)
       ? action.ikTargets
       : []
-
-    while (ikTargetMarkers.length < targets.length) {
-      const marker = new Mesh(ikTargetGeometry, ikTargetMaterial)
-      const line = new Line(new BufferGeometry(), ikTargetLineMaterial)
-
-      marker.renderOrder = 100
-      marker.userData.isIkTargetMarker = true
-      line.renderOrder = 99
-      line.userData.isIkTargetMarker = true
-      marker.userData.groundLine = line
-      ikTargetMarkers.push(marker)
-      player.add(line)
-      player.add(marker)
-    }
-
-    ikTargetMarkers.forEach((marker, index) => {
-      const line = marker.userData.groundLine
-      const target = targets[index]
+    const activeIkTargetId = typeof action?.activeIkTargetId === 'string'
+      ? action.activeIkTargetId
+      : null
+    helperMarkers.hidePrefix('ik-target-')
+    targets.forEach((target) => {
       const position = target?.position
       const visible = (
         Number.isFinite(position?.x)
@@ -186,16 +231,41 @@ export const createEnvironment = (scene) => {
         && Number.isFinite(position?.z)
       )
 
-      marker.visible = visible
-      line.visible = visible
-      if (visible) {
-        marker.position.set(position.x, position.y, position.z)
-        // 调试目标点的垂线固定在玩家局部地面上，便于从任意视角判断水平落点。
-        line.geometry.setFromPoints([
-          marker.position.clone().setY(-ikTargetLineGroundDepth),
-          marker.position.clone(),
-        ])
-      }
+      if (!visible) return
+
+      const selected = target.id === activeIkTargetId
+
+      helperMarkers.markPoint({
+        id: `ik-target-${target.id}`,
+        parent: player,
+        position: new Vector3(position.x, position.y, position.z),
+        color: '#ff2d2d',
+        opacity: selected ? 1 : 0.38,
+        visible: true,
+        sphere: {
+          radius: 0.032,
+          depthTest: false,
+        },
+        verticalLine: {
+          fromY: -ikTargetLineGroundDepth,
+          width: helperLineWidth,
+          opacity: selected ? 0.85 : 0.35,
+          depthTest: false,
+        },
+        groundCross: {
+          halfSize: ikTargetGroundCrossSize,
+          y: -ikTargetLineGroundDepth + 0.01,
+          width: helperLineWidth,
+          opacity: selected ? 0.9 : 0.35,
+          depthTest: true,
+        },
+        heightDisc: {
+          radius: 0.72,
+          opacity: selected ? 0.16 : 0.06,
+          depthTest: true,
+          depthWrite: false,
+        },
+      })
     })
   }
 
@@ -254,17 +324,12 @@ export const createEnvironment = (scene) => {
       tree.userData.dispose?.()
     })
     player.traverse((child) => {
-      if (child.userData.isIkTargetMarker) return
+      if (child.userData.isHelperMarker) return
       if (child.isMesh) child.geometry.dispose()
     })
     player.userData.material.dispose()
     player.userData.dispose?.()
-    ikTargetGeometry.dispose()
-    ikTargetMaterial.dispose()
-    ikTargetLineMaterial.dispose()
-    ikTargetMarkers.forEach((marker) => {
-      marker.userData.groundLine?.geometry.dispose()
-    })
+    helperMarkers.dispose()
     ground.geometry.dispose()
     ground.material.dispose()
     groundTexture.dispose()
@@ -273,6 +338,7 @@ export const createEnvironment = (scene) => {
   return {
     playerState,
     setPlayerControlPointsVisible,
+    setPlayerCenterOfMassVisible,
     setPlayerWalkIkActive,
     playPlayerUserAction,
     previewPlayerUserAction,

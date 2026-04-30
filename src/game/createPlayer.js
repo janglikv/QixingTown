@@ -72,6 +72,7 @@ const PLAYER_DEFINITION = {
                 key: 'footLeft',
                 cname: '左脚',
                 length: 0.62,
+                massScale: 2,
                 direction: [-0.04, -0.62, 0],
                 supportContact: true,
                 ik: {
@@ -98,6 +99,7 @@ const PLAYER_DEFINITION = {
                 key: 'footRight',
                 cname: '右脚',
                 length: 0.62,
+                massScale: 2,
                 direction: [0.04, -0.62, 0],
                 supportContact: true,
                 ik: {
@@ -118,6 +120,7 @@ const PLAYER_DEFINITION = {
             key: 'head',
             cname: '头部',
             length: 0.38,
+            massScale: 0,
             direction: [0, 1, 0],
           },
           shoulderLeft: {
@@ -136,6 +139,7 @@ const PLAYER_DEFINITION = {
                     key: 'handLeft',
                     cname: '左手',
                     length: 0.32,
+                    massScale: 2,
                     direction: [-0.04, -0.32, 0],
                     ik: {
                       up: 2,
@@ -161,6 +165,7 @@ const PLAYER_DEFINITION = {
                     key: 'handRight',
                     cname: '右手',
                     length: 0.32,
+                    massScale: 2,
                     direction: [0.04, -0.32, 0],
                     ik: {
                       up: 2,

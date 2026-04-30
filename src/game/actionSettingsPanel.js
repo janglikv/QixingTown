@@ -136,7 +136,7 @@ const createField = ({ label, input }) => {
   return field
 }
 
-export const createActionSettingsPanel = ({ app, getIkTargetPosition }) => {
+export const createActionSettingsPanel = ({ app, controlsContainer = app, getIkTargetPosition }) => {
   let actions = readUserActions()
   const initialPanelState = readPanelState()
   let selectedId = actions.some((action) => action.id === initialPanelState.selectedId)
@@ -201,10 +201,6 @@ export const createActionSettingsPanel = ({ app, getIkTargetPosition }) => {
   button.textContent = '动作设置'
   applyButtonStyle(button)
   Object.assign(button.style, {
-    position: 'absolute',
-    right: '14px',
-    top: '76px',
-    zIndex: '10',
     display: 'none',
     alignItems: 'center',
     justifyContent: 'center',
@@ -430,7 +426,8 @@ export const createActionSettingsPanel = ({ app, getIkTargetPosition }) => {
 
   panel.append(panelCloseButton, title, list, emptyText, addBar)
   detailPanel.append(detailCloseButton, detailTitle, form, controlTitle, controlHeader, controlList, emptyControlText, controlBar, actionsBar)
-  app.append(button, panel, detailPanel)
+  controlsContainer.append(button)
+  app.append(panel, detailPanel)
 
   const stopPointerLock = (event) => {
     event.stopPropagation()
@@ -512,7 +509,7 @@ export const createActionSettingsPanel = ({ app, getIkTargetPosition }) => {
       : []
     activeIkTargetId = draftIkTargets.some((target) => target.id === activeIkTargetId)
       ? activeIkTargetId
-      : draftIkTargets[0]?.id ?? null
+      : null
     renderControlList()
     dispatchDraftPreview()
   }
@@ -559,7 +556,7 @@ export const createActionSettingsPanel = ({ app, getIkTargetPosition }) => {
     controlTitle.textContent = isIk ? 'IK端点' : '关节运动'
     addControlButton.textContent = isIk ? '新增IK' : '新增关节'
     emptyControlText.textContent = isIk ? '暂无IK端点' : '暂无关节运动'
-    controlHeader.replaceChildren(...(isIk ? ['IK链', 'X', 'Y', 'Z', ''] : ['关节', '方向', '角度', '']).map((label) => {
+    controlHeader.replaceChildren(...(isIk ? ['', 'IK链', 'X', 'Y', 'Z', ''] : ['关节', '方向', '角度', '']).map((label) => {
       const item = document.createElement('span')
       item.textContent = label
       Object.assign(item.style, {
@@ -568,18 +565,24 @@ export const createActionSettingsPanel = ({ app, getIkTargetPosition }) => {
       })
       return item
     }))
-    controlHeader.style.gridTemplateColumns = isIk ? '1fr 64px 64px 64px 52px' : '1fr 1fr 80px 52px'
+    controlHeader.style.gridTemplateColumns = isIk ? '24px 1fr 64px 64px 64px 52px' : '1fr 1fr 80px 52px'
     emptyControlText.style.display = rows.length === 0 ? 'block' : 'none'
 
     if (isIk) {
       draftIkTargets.forEach((target) => {
         const row = document.createElement('div')
+        const activeRadio = document.createElement('input')
         const chainSelect = createSelectInput(PLAYER_ACTION_IK_CHAIN_OPTIONS)
         const xInput = createTextInput()
         const yInput = createTextInput()
         const zInput = createTextInput()
         const removeButton = document.createElement('button')
 
+        activeRadio.type = 'radio'
+        activeRadio.name = 'active-ik-target'
+        activeRadio.checked = target.id === activeIkTargetId
+        activeRadio.title = '选中后可用 WASD / Space / Shift 调整'
+        activeRadio.style.margin = '0'
         chainSelect.value = target.chain
         ;[
           [xInput, 'x'],
@@ -595,7 +598,7 @@ export const createActionSettingsPanel = ({ app, getIkTargetPosition }) => {
         applyButtonStyle(removeButton, 'danger')
         Object.assign(row.style, {
           display: 'grid',
-          gridTemplateColumns: '1fr 64px 64px 64px 52px',
+          gridTemplateColumns: '24px 1fr 64px 64px 64px 52px',
           gap: '8px',
           alignItems: 'center',
           padding: '4px',
@@ -606,6 +609,12 @@ export const createActionSettingsPanel = ({ app, getIkTargetPosition }) => {
 
         row.addEventListener('pointerdown', () => {
           activeIkTargetId = target.id
+          dispatchDraftPreview()
+        })
+        activeRadio.addEventListener('change', () => {
+          activeIkTargetId = target.id
+          renderControlList()
+          dispatchDraftPreview()
         })
         chainSelect.addEventListener('change', () => {
           activeIkTargetId = target.id
@@ -627,12 +636,14 @@ export const createActionSettingsPanel = ({ app, getIkTargetPosition }) => {
         })
         removeButton.addEventListener('click', () => {
           draftIkTargets = draftIkTargets.filter((item) => item.id !== target.id)
-          activeIkTargetId = draftIkTargets[0]?.id ?? null
+          activeIkTargetId = draftIkTargets.some((item) => item.id === activeIkTargetId)
+            ? activeIkTargetId
+            : null
           renderControlList()
           dispatchDraftPreview()
         })
 
-        row.append(chainSelect, xInput, yInput, zInput, removeButton)
+        row.append(activeRadio, chainSelect, xInput, yInput, zInput, removeButton)
         controlList.append(row)
       })
       return
@@ -795,6 +806,7 @@ export const createActionSettingsPanel = ({ app, getIkTargetPosition }) => {
       ...action,
       label: label || action.label,
       type: draftActionType,
+      activeIkTargetId: draftActionType === 'ik' ? activeIkTargetId : null,
       controls: draftControls.map((control) => ({ ...control })),
       ikTargets: draftIkTargets.map((target) => ({
         ...target,
@@ -839,7 +851,7 @@ export const createActionSettingsPanel = ({ app, getIkTargetPosition }) => {
 
   const handleTypeChange = () => {
     draftActionType = typeSelect.value === 'ik' ? 'ik' : 'fk'
-    activeIkTargetId = draftIkTargets[0]?.id ?? null
+    activeIkTargetId = null
     renderControlList()
     dispatchDraftPreview()
   }
@@ -867,7 +879,7 @@ export const createActionSettingsPanel = ({ app, getIkTargetPosition }) => {
 
     const targetId = draftIkTargets.some((target) => target.id === activeIkTargetId)
       ? activeIkTargetId
-      : draftIkTargets[0]?.id
+      : null
     if (!targetId) return
 
     activeIkTargetId = targetId

@@ -19,6 +19,7 @@ const createRenderer = (app) => {
 const CAMERA_STATE_STORAGE_KEY = 'qixing-town:camera-state'
 const CAMERA_STATE_SAVE_INTERVAL = 250
 const CONTROL_POINTS_VISIBLE_STORAGE_KEY = 'qixing-town:control-points-visible'
+const CENTER_OF_MASS_VISIBLE_STORAGE_KEY = 'qixing-town:center-of-mass-visible'
 const CONTROL_TARGET_STORAGE_KEY = 'qixing-town:control-target'
 
 const isFiniteNumberArray = (value, length) => (
@@ -68,9 +69,27 @@ const readControlPointsVisible = () => {
   }
 }
 
+const readCenterOfMassVisible = () => {
+  try {
+    const value = window.localStorage.getItem(CENTER_OF_MASS_VISIBLE_STORAGE_KEY)
+
+    return value === 'true'
+  } catch {
+    return false
+  }
+}
+
 const writeControlPointsVisible = (visible) => {
   try {
     window.localStorage.setItem(CONTROL_POINTS_VISIBLE_STORAGE_KEY, String(visible))
+  } catch {
+    // Storage can be unavailable in restricted browser modes.
+  }
+}
+
+const writeCenterOfMassVisible = (visible) => {
+  try {
+    window.localStorage.setItem(CENTER_OF_MASS_VISIBLE_STORAGE_KEY, String(visible))
   } catch {
     // Storage can be unavailable in restricted browser modes.
   }
@@ -94,23 +113,46 @@ const writeControlTarget = (target) => {
   }
 }
 
-const createControlPointToggle = ({ app, initialVisible, onChange }) => {
+const createOverlayToolbar = (app) => {
+  const toolbar = document.createElement('div')
+
+  Object.assign(toolbar.style, {
+    position: 'absolute',
+    right: '6px',
+    top: '14px',
+    zIndex: '10',
+    display: 'grid',
+    gap: '8px',
+    justifyItems: 'end',
+    paddingRight: '4px',
+  })
+  app.append(toolbar)
+
+  return {
+    element: toolbar,
+    dispose: () => {
+      toolbar.remove()
+    },
+  }
+}
+
+const createVisibilityToggle = ({
+  container,
+  initialVisible,
+  label: labelText,
+  onChange,
+}) => {
   const label = document.createElement('label')
   const checkbox = document.createElement('input')
   const text = document.createElement('span')
 
   checkbox.type = 'checkbox'
   checkbox.checked = initialVisible
-  text.textContent = '控制点'
+  text.textContent = labelText
   Object.assign(label.style, {
-    position: 'absolute',
-    right: '6px',
-    top: '14px',
-    zIndex: '10',
     display: 'none',
     alignItems: 'center',
     gap: '8px',
-    padding: '8px 10px',
     borderRadius: '6px',
     background: 'rgba(7, 17, 31, 0.72)',
     color: '#eef5ee',
@@ -119,7 +161,7 @@ const createControlPointToggle = ({ app, initialVisible, onChange }) => {
   })
   checkbox.style.margin = '0'
   label.append(checkbox, text)
-  app.append(label)
+  container.append(label)
 
   const stopPointerLock = (event) => {
     event.stopPropagation()
@@ -146,7 +188,7 @@ const createControlPointToggle = ({ app, initialVisible, onChange }) => {
   }
 }
 
-const createControlTargetIndicator = ({ app, initialTarget }) => {
+const createControlTargetIndicator = ({ container, initialTarget }) => {
   const element = document.createElement('div')
   const labels = {
     camera: '镜头',
@@ -154,12 +196,7 @@ const createControlTargetIndicator = ({ app, initialTarget }) => {
   }
 
   Object.assign(element.style, {
-    position: 'absolute',
-    right: '6px',
-    top: '40px',
-    zIndex: '10',
     display: 'none',
-    padding: '8px 10px',
     borderRadius: '6px',
     background: 'rgba(7, 17, 31, 0.72)',
     color: '#eef5ee',
@@ -173,7 +210,7 @@ const createControlTargetIndicator = ({ app, initialTarget }) => {
   }
 
   setTarget(initialTarget)
-  app.append(element)
+  container.append(element)
 
   return {
     setTarget,
@@ -214,6 +251,7 @@ export const createSceneApp = (app) => {
   const scene = new Scene()
   const camera = createCamera()
   const renderer = createRenderer(app)
+  const overlayToolbar = createOverlayToolbar(app)
   const environment = createEnvironment(scene)
   const playerController = createPlayerController({
     camera,
@@ -223,20 +261,33 @@ export const createSceneApp = (app) => {
   })
   const controlPointsVisible = readControlPointsVisible()
   environment.setPlayerControlPointsVisible(controlPointsVisible)
-  const controlPointToggle = createControlPointToggle({
-    app,
+  const controlPointToggle = createVisibilityToggle({
+    container: overlayToolbar.element,
+    label: '控制点',
     initialVisible: controlPointsVisible,
     onChange: (visible) => {
       environment.setPlayerControlPointsVisible(visible)
       writeControlPointsVisible(visible)
     },
   })
+  const centerOfMassVisible = readCenterOfMassVisible()
+  environment.setPlayerCenterOfMassVisible(centerOfMassVisible)
+  const centerOfMassToggle = createVisibilityToggle({
+    container: overlayToolbar.element,
+    label: '质心',
+    initialVisible: centerOfMassVisible,
+    onChange: (visible) => {
+      environment.setPlayerCenterOfMassVisible(visible)
+      writeCenterOfMassVisible(visible)
+    },
+  })
   const controlTargetIndicator = createControlTargetIndicator({
-    app,
+    container: overlayToolbar.element,
     initialTarget: playerController.getControlTarget(),
   })
   const actionSettingsPanel = createActionSettingsPanel({
     app,
+    controlsContainer: overlayToolbar.element,
     getIkTargetPosition: environment.getPlayerIkTargetPosition,
   })
   const createUserActionWheelActions = () => readUserActions().map((action) => ({
@@ -351,6 +402,7 @@ export const createSceneApp = (app) => {
     playerController.update(delta)
     const cursorVisible = !playerController.controls.isLocked
     controlPointToggle.syncCursorVisible(cursorVisible)
+    centerOfMassToggle.syncCursorVisible(cursorVisible)
     controlTargetIndicator.syncCursorVisible(cursorVisible)
     actionSettingsPanel.syncCursorVisible(cursorVisible)
     environment.update(delta)
@@ -380,8 +432,10 @@ export const createSceneApp = (app) => {
     app.removeEventListener('qixing-town:user-actions-changed', rebuildActionWheel)
     persistCameraStateOnUnload()
     controlPointToggle.dispose()
+    centerOfMassToggle.dispose()
     controlTargetIndicator.dispose()
     actionSettingsPanel.dispose()
+    overlayToolbar.dispose()
     actionWheel.dispose()
     playerController.dispose()
     environment.dispose()
