@@ -9,9 +9,12 @@ export const attachRigRuntimeUpdate = ({
   bones,
   skeletonRoot,
   updatePose,
+  updateBalance,
 }) => {
   figure.userData.update = (delta) => {
-    updatePose?.(delta)
+    const poseUpdate = updatePose?.(delta)
+    updateBalance?.(delta)
+    poseUpdate?.reapplyIk?.()
     lockRigContacts({
       rig,
       figure,

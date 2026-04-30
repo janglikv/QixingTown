@@ -11,6 +11,10 @@ export {
 } from './actionController.js'
 
 export {
+  createRigBalanceController,
+} from './balance.js'
+
+export {
   createRigContactLocks,
   lockRigContacts,
 } from './contactLock.js'

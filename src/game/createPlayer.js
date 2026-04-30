@@ -180,6 +180,14 @@ const PLAYER_DEFINITION = {
     { key: 'bothLegs', cname: '双腿', bones: ['hipLeft', 'hipRight'] },
     { key: 'bothFeet', cname: '双脚', bones: ['kneeLeft', 'kneeRight'] },
   ],
+  balance: {
+    torsoBone: 'neck',
+    strength: 1.35,
+    maxOffset: 0.32,
+    immediate: true,
+    momentArmWeight: 2.8,
+    supportResponse: 8,
+  },
   render: {
     endCaps: {
       enabled: true,

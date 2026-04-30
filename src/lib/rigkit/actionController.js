@@ -57,10 +57,30 @@ export const createRigActionController = ({
   const getControlBones = (bone) => controlGroupsByKey[bone] ?? [bone]
   const getActionType = (action) => (action?.type === 'ik' ? 'ik' : 'fk')
 
-  const restoreIkPositions = () => {
-    Object.entries(basePositions).forEach(([key, position]) => {
+  const restoreBonePositions = (boneKeys) => {
+    boneKeys.forEach((key) => {
+      const position = basePositions[key]
+      if (!position) return
+
       bones[key].position.copy(position)
     })
+  }
+
+  const restoreAllPositions = () => {
+    restoreBonePositions(Object.keys(basePositions))
+  }
+
+  const restoreIkChainPositions = (chainKeys) => {
+    const boneKeys = new Set()
+
+    chainKeys.forEach((chainKey) => {
+      const chain = ikChainsByKey[chainKey]
+      if (!chain) return
+
+      boneKeys.add(chain.mid)
+      boneKeys.add(chain.end)
+    })
+    restoreBonePositions(boneKeys)
   }
 
   const createTargetRotations = (action) => {
@@ -128,6 +148,30 @@ export const createRigActionController = ({
     })
   }
 
+  const reapplyCurrentIkTargets = () => {
+    if (Object.keys(state.currentIkTargets).length === 0) return
+
+    // 平衡已经改过躯干位置，IK 重解只恢复 IK 会直接改写的链段。
+    restoreIkChainPositions(Object.keys(state.currentIkTargets))
+    applyIkTargets(state.currentIkTargets)
+  }
+
+  const blendReleasedIkPositionsToBase = ({ chainKeys, amount }) => {
+    chainKeys.forEach((chainKey) => {
+      if (state.targetIkTargets[chainKey]) return
+
+      const chain = ikChainsByKey[chainKey]
+      if (!chain) return
+
+      ;[chain.mid, chain.end].forEach((boneKey) => {
+        const basePosition = basePositions[boneKey]
+        if (!basePosition) return
+
+        bones[boneKey].position.lerp(basePosition, amount)
+      })
+    })
+  }
+
   const setTarget = ({ action, immediate = false }) => {
     const controls = Array.isArray(action?.controls) ? action.controls : []
     const ikTargets = Array.isArray(action?.ikTargets) ? action.ikTargets : []
@@ -169,7 +213,7 @@ export const createRigActionController = ({
       state.currentIkTargets = Object.fromEntries(
         Object.entries(state.targetIkTargets).map(([key, target]) => [key, target.clone()]),
       )
-      restoreIkPositions()
+      restoreAllPositions()
       applyIkTargets(state.currentIkTargets)
     }
   }
@@ -190,11 +234,11 @@ export const createRigActionController = ({
       ]).filter(([, target]) => target),
     )
     state.transitionElapsed = 0
-    restoreIkPositions()
+    restoreAllPositions()
   }
 
   const update = (delta) => {
-    if (state.touchedBones.size === 0 && state.touchedIkChains.size === 0) return
+    if (state.touchedBones.size === 0 && state.touchedIkChains.size === 0) return null
 
     state.transitionElapsed = Math.min(
       state.transitionElapsed + delta,
@@ -203,7 +247,7 @@ export const createRigActionController = ({
     const amount = smoothStep(state.transitionElapsed / state.transitionDuration)
     const nextRotations = {}
 
-    restoreIkPositions()
+    restoreAllPositions()
     state.touchedBones.forEach((bone) => {
       const from = state.fromRotations[bone] ?? { x: 0, z: 0 }
       const target = state.targetRotations[bone] ?? { x: 0, z: 0 }
@@ -226,6 +270,10 @@ export const createRigActionController = ({
       nextIkTargets[chainKey] = from.clone().lerp(target, amount)
     })
     applyIkTargets(nextIkTargets)
+    blendReleasedIkPositionsToBase({
+      chainKeys: state.touchedIkChains,
+      amount,
+    })
     state.currentIkTargets = Object.fromEntries(
       Object.entries(nextIkTargets)
         .filter(([chainKey]) => state.targetIkTargets[chainKey])
@@ -236,6 +284,12 @@ export const createRigActionController = ({
     }
     if (amount >= 1 && Object.keys(state.currentIkTargets).length === 0) {
       state.touchedIkChains.clear()
+    }
+
+    return {
+      reapplyIk: Object.keys(state.currentIkTargets).length > 0
+        ? reapplyCurrentIkTargets
+        : null,
     }
   }
 
