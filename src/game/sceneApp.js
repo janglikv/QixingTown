@@ -215,7 +215,10 @@ export const createSceneApp = (app) => {
     app,
     initialTarget: playerController.getControlTarget(),
   })
-  const actionSettingsPanel = createActionSettingsPanel({ app })
+  const actionSettingsPanel = createActionSettingsPanel({
+    app,
+    getIkTargetPosition: environment.getPlayerIkTargetPosition,
+  })
   const createUserActionWheelActions = () => readUserActions().map((action) => ({
     label: action.label,
     isActive: () => environment.playerState.userActionId === action.id,

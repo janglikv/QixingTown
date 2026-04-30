@@ -136,7 +136,7 @@ const createField = ({ label, input }) => {
   return field
 }
 
-export const createActionSettingsPanel = ({ app }) => {
+export const createActionSettingsPanel = ({ app, getIkTargetPosition }) => {
   let actions = readUserActions()
   const initialPanelState = readPanelState()
   let selectedId = actions.some((action) => action.id === initialPanelState.selectedId)
@@ -150,6 +150,11 @@ export const createActionSettingsPanel = ({ app }) => {
   let activeIkTargetId = null
   let ikKeyboardIntervalId = 0
   const activeIkKeyCodes = new Set()
+
+  const createIkTargetPosition = (chain) => (
+    getIkTargetPosition?.(chain)
+    ?? { ...PLAYER_ACTION_IK_DEFAULT_TARGETS[chain] }
+  )
 
   const button = document.createElement('button')
   const panel = document.createElement('section')
@@ -527,7 +532,7 @@ export const createActionSettingsPanel = ({ app }) => {
         return {
           ...target,
           chain: value,
-          position: { ...PLAYER_ACTION_IK_DEFAULT_TARGETS[value] },
+          position: createIkTargetPosition(value),
         }
       }
 
@@ -761,7 +766,7 @@ export const createActionSettingsPanel = ({ app }) => {
         {
           id,
           chain,
-          position: { ...PLAYER_ACTION_IK_DEFAULT_TARGETS[chain] },
+          position: createIkTargetPosition(chain),
         },
       ]
       activeIkTargetId = id

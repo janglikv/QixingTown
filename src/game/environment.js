@@ -11,6 +11,7 @@ import {
   MeshStandardMaterial,
   PlaneGeometry,
   SphereGeometry,
+  Vector3,
 } from 'three'
 import {
   GROUND_REPOSITION_STEP,
@@ -19,7 +20,7 @@ import {
   WORLD_TUNING,
 } from '../config.js'
 import { createGroundTexture } from './createGroundTexture.js'
-import { createPlayer } from './createPlayer.js'
+import { createPlayer, PLAYER_MODEL_RIG } from './createPlayer.js'
 import { createPolaris, createStarField } from './createStarField.js'
 import { createTree } from './createTree.js'
 
@@ -135,6 +136,23 @@ export const createEnvironment = (scene) => {
     player.position.z += offset.z
   }
 
+  const getPlayerIkTargetPosition = (chainKey) => {
+    const chain = PLAYER_MODEL_RIG.ikChainsByKey[chainKey]
+    const bone = chain ? player.userData.bones[chain.end] : null
+
+    if (!bone) return null
+
+    player.updateMatrixWorld(true)
+
+    const position = player.worldToLocal(bone.getWorldPosition(new Vector3()))
+
+    return {
+      x: position.x,
+      y: position.y,
+      z: position.z,
+    }
+  }
+
   const syncPlayerIkTargetMarkers = (action) => {
     const targets = action?.type === 'ik' && Array.isArray(action.ikTargets)
       ? action.ikTargets
@@ -240,6 +258,7 @@ export const createEnvironment = (scene) => {
     playPlayerUserAction,
     previewPlayerUserAction,
     cancelPlayerUserAction,
+    getPlayerIkTargetPosition,
     clearPlayerIkTargetMarkers: () => syncPlayerIkTargetMarkers(null),
     update,
     updateGroundPosition,
