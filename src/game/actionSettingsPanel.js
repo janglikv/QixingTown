@@ -167,6 +167,7 @@ export const createActionSettingsPanel = ({ app }) => {
   const addControlButton = document.createElement('button')
   const saveButton = document.createElement('button')
   const deleteButton = document.createElement('button')
+  const saveStatusText = document.createElement('span')
 
   const handleToggle = () => {
     visible = !visible
@@ -176,6 +177,16 @@ export const createActionSettingsPanel = ({ app }) => {
   }
 
   const handleDetailClose = () => {
+    const action = getSelectedAction()
+
+    // 关闭未配置任何运动的动作时直接清理，避免连续新建产生空数据。
+    if (action && draftControls.length === 0 && draftIkTargets.length === 0) {
+      actions = actions.filter((item) => item.id !== action.id)
+      selectedId = null
+      persistAndRender()
+      return
+    }
+
     selectedId = null
     persistPanelState()
     renderList()
@@ -243,8 +254,6 @@ export const createActionSettingsPanel = ({ app }) => {
   Object.assign(list.style, {
     display: 'grid',
     gap: '6px',
-    maxHeight: '180px',
-    overflowY: 'auto',
     marginBottom: '12px',
   })
 
@@ -331,28 +340,50 @@ export const createActionSettingsPanel = ({ app }) => {
   applyButtonStyle(addControlButton)
   applyButtonStyle(saveButton)
   applyButtonStyle(deleteButton, 'danger')
+  Object.assign(addButton.style, {
+    width: '100%',
+    borderStyle: 'dashed',
+  })
+  Object.assign(addControlButton.style, {
+    width: '100%',
+    borderStyle: 'dashed',
+  })
+  saveStatusText.textContent = ''
+  Object.assign(saveStatusText.style, {
+    color: 'rgba(238, 245, 238, 0.62)',
+    fontSize: '12px',
+    lineHeight: '30px',
+    whiteSpace: 'nowrap',
+  })
 
   const controlBar = document.createElement('div')
   Object.assign(controlBar.style, {
     display: 'flex',
-    justifyContent: 'flex-end',
+    width: '100%',
     marginTop: '8px',
   })
   controlBar.append(addControlButton)
 
   const actionsBar = document.createElement('div')
+  const saveGroup = document.createElement('div')
   Object.assign(actionsBar.style, {
     display: 'flex',
     gap: '8px',
-    justifyContent: 'flex-end',
+    justifyContent: 'space-between',
     marginTop: '12px',
   })
-  actionsBar.append(saveButton, deleteButton)
+  Object.assign(saveGroup.style, {
+    display: 'flex',
+    gap: '8px',
+    alignItems: 'center',
+  })
+  saveGroup.append(saveStatusText, saveButton)
+  actionsBar.append(deleteButton, saveGroup)
 
   const addBar = document.createElement('div')
   Object.assign(addBar.style, {
     display: 'flex',
-    justifyContent: 'flex-end',
+    width: '100%',
     marginTop: '12px',
   })
   addBar.append(addButton)
@@ -406,6 +437,47 @@ export const createActionSettingsPanel = ({ app }) => {
     writePanelState({ visible, selectedId })
   }
 
+  const areControlsEqual = (left, right) => (
+    left.length === right.length
+    && left.every((control, index) => {
+      const target = right[index]
+      return target
+        && control.bone === target.bone
+        && control.direction === target.direction
+        && control.angle === target.angle
+    })
+  )
+
+  const areIkTargetsEqual = (left, right) => (
+    left.length === right.length
+    && left.every((target, index) => {
+      const savedTarget = right[index]
+      return savedTarget
+        && target.chain === savedTarget.chain
+        && target.position?.x === savedTarget.position?.x
+        && target.position?.y === savedTarget.position?.y
+        && target.position?.z === savedTarget.position?.z
+    })
+  )
+
+  const isDraftDirty = () => {
+    const action = getSelectedAction()
+    if (!action) return false
+
+    const savedType = action.type === 'ik' ? 'ik' : 'fk'
+    const savedControls = Array.isArray(action.controls) ? action.controls : []
+    const savedIkTargets = Array.isArray(action.ikTargets) ? action.ikTargets : []
+
+    return nameInput.value.trim() !== action.label
+      || draftActionType !== savedType
+      || !areControlsEqual(draftControls, savedControls)
+      || !areIkTargetsEqual(draftIkTargets, savedIkTargets)
+  }
+
+  const updateSaveStatus = () => {
+    saveStatusText.textContent = isDraftDirty() ? '有修改尚未保存' : ''
+  }
+
   const syncDetailPanelPosition = () => {
     detailPanel.style.right = '14px'
     detailPanel.style.top = '16px'
@@ -415,6 +487,7 @@ export const createActionSettingsPanel = ({ app }) => {
     const action = getSelectedAction()
     const disabled = !action
 
+    panel.style.display = visible && !action ? 'block' : 'none'
     detailPanel.style.display = visible && action ? 'block' : 'none'
     addBar.style.display = 'flex'
     nameInput.disabled = disabled
@@ -730,6 +803,7 @@ export const createActionSettingsPanel = ({ app }) => {
   }
 
   const dispatchDraftPreview = () => {
+    updateSaveStatus()
     const action = getSelectedAction()
     if (!visible || detailPanel.style.display !== 'block' || !action) {
       clearIkTargetMarkers()
@@ -846,6 +920,7 @@ export const createActionSettingsPanel = ({ app }) => {
   }
 
   button.addEventListener('click', handleToggle)
+  nameInput.addEventListener('input', dispatchDraftPreview)
   typeSelect.addEventListener('change', handleTypeChange)
   addButton.addEventListener('click', handleAdd)
   addControlButton.addEventListener('click', handleAddControl)
@@ -877,7 +952,7 @@ export const createActionSettingsPanel = ({ app }) => {
         detailPanel.style.display = 'none'
         clearIkTargetMarkers()
       } else {
-        panel.style.display = visible ? 'block' : 'none'
+        panel.style.display = visible && !getSelectedAction() ? 'block' : 'none'
         detailPanel.style.display = visible && getSelectedAction() ? 'block' : 'none'
         dispatchDraftPreview()
       }
@@ -885,6 +960,7 @@ export const createActionSettingsPanel = ({ app }) => {
     dispose: () => {
       clearIkTargetMarkers()
       button.removeEventListener('click', handleToggle)
+      nameInput.removeEventListener('input', dispatchDraftPreview)
       typeSelect.removeEventListener('change', handleTypeChange)
       addButton.removeEventListener('click', handleAdd)
       addControlButton.removeEventListener('click', handleAddControl)
