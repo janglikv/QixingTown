@@ -19,6 +19,7 @@ const createRenderer = (app) => {
 const CAMERA_STATE_STORAGE_KEY = 'qixing-town:camera-state'
 const CAMERA_STATE_SAVE_INTERVAL = 250
 const CONTROL_POINTS_VISIBLE_STORAGE_KEY = 'qixing-town:control-points-visible'
+const CONTROL_TARGET_STORAGE_KEY = 'qixing-town:control-target'
 
 const isFiniteNumberArray = (value, length) => (
   Array.isArray(value)
@@ -70,6 +71,24 @@ const readControlPointsVisible = () => {
 const writeControlPointsVisible = (visible) => {
   try {
     window.localStorage.setItem(CONTROL_POINTS_VISIBLE_STORAGE_KEY, String(visible))
+  } catch {
+    // Storage can be unavailable in restricted browser modes.
+  }
+}
+
+const readControlTarget = () => {
+  try {
+    const value = window.localStorage.getItem(CONTROL_TARGET_STORAGE_KEY)
+
+    return value === 'player' ? 'player' : 'camera'
+  } catch {
+    return 'camera'
+  }
+}
+
+const writeControlTarget = (target) => {
+  try {
+    window.localStorage.setItem(CONTROL_TARGET_STORAGE_KEY, target)
   } catch {
     // Storage can be unavailable in restricted browser modes.
   }
@@ -199,7 +218,8 @@ export const createSceneApp = (app) => {
   const playerController = createPlayerController({
     camera,
     domElement: renderer.domElement,
-    movePlayer: environment.movePlayer,
+    setPlayerWalkIkActive: environment.setPlayerWalkIkActive,
+    initialControlTarget: readControlTarget(),
   })
   const controlPointsVisible = readControlPointsVisible()
   environment.setPlayerControlPointsVisible(controlPointsVisible)
@@ -268,7 +288,10 @@ export const createSceneApp = (app) => {
 
     if (event.code === 'Tab' && !['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement?.tagName)) {
       event.preventDefault()
-      controlTargetIndicator.setTarget(playerController.toggleControlTarget())
+      const target = playerController.toggleControlTarget()
+
+      writeControlTarget(target)
+      controlTargetIndicator.setTarget(target)
     }
 
     if (event.code === 'KeyG') {

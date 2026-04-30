@@ -20,7 +20,7 @@ import {
   WORLD_TUNING,
 } from '../config.js'
 import { createGroundTexture } from './createGroundTexture.js'
-import { createPlayer, PLAYER_MODEL_RIG } from './createPlayer.js'
+import { createPlayer, createPlayerWalkIkAction, PLAYER_MODEL_RIG } from './createPlayer.js'
 import { createPolaris, createStarField } from './createStarField.js'
 import { createTree } from './createTree.js'
 
@@ -72,6 +72,10 @@ export const createEnvironment = (scene) => {
   const playerState = {
     userActionId: null,
   }
+  const playerWalkState = {
+    active: false,
+    elapsed: 0,
+  }
   const ikTargetGeometry = new SphereGeometry(0.032, 16, 12)
   const ikTargetMaterial = new MeshBasicMaterial({
     color: '#ff2d2d',
@@ -112,6 +116,11 @@ export const createEnvironment = (scene) => {
       WORLD_TUNING.polarisMinOpacity
       + twinkle * (WORLD_TUNING.polarisMaxOpacity - WORLD_TUNING.polarisMinOpacity)
     )
+    if (playerWalkState.active) {
+      playerWalkState.elapsed += delta
+      // 走路预置是逐帧 IK 目标，不写入用户动作列表。
+      player.userData.previewUserAction(createPlayerWalkIkAction(playerWalkState.elapsed))
+    }
     player.userData.update(delta)
   }
 
@@ -129,11 +138,6 @@ export const createEnvironment = (scene) => {
 
   const setPlayerControlPointsVisible = (visible) => {
     player.userData.setControlPointsVisible(visible)
-  }
-
-  const movePlayer = (offset) => {
-    player.position.x += offset.x
-    player.position.z += offset.z
   }
 
   const getPlayerIkTargetPosition = (chainKey) => {
@@ -196,6 +200,7 @@ export const createEnvironment = (scene) => {
   }
 
   const playPlayerUserAction = (action) => {
+    setPlayerWalkIkActive(false)
     playerState.userActionId = action.id
     syncPlayerIkTargetMarkers(null)
     player.userData.playUserAction(action)
@@ -209,6 +214,20 @@ export const createEnvironment = (scene) => {
   const cancelPlayerUserAction = () => {
     playerState.userActionId = null
     syncPlayerIkTargetMarkers(null)
+    player.userData.cancelUserAction()
+  }
+
+  const setPlayerWalkIkActive = (active) => {
+    if (playerWalkState.active === active) return
+
+    playerWalkState.active = active
+    playerWalkState.elapsed = 0
+    if (active) {
+      playerState.userActionId = null
+      syncPlayerIkTargetMarkers(null)
+      return
+    }
+
     player.userData.cancelUserAction()
   }
 
@@ -254,7 +273,7 @@ export const createEnvironment = (scene) => {
   return {
     playerState,
     setPlayerControlPointsVisible,
-    movePlayer,
+    setPlayerWalkIkActive,
     playPlayerUserAction,
     previewPlayerUserAction,
     cancelPlayerUserAction,

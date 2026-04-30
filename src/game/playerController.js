@@ -1,4 +1,4 @@
-import { Vector2, Vector3 } from 'three'
+import { Vector2 } from 'three'
 import { PointerLockControls } from 'three/examples/jsm/controls/PointerLockControls.js'
 import {
   CAMERA_HEIGHT,
@@ -11,7 +11,12 @@ const CONTROL_TARGETS = {
   player: 'player',
 }
 
-export const createPlayerController = ({ camera, domElement, movePlayer }) => {
+export const createPlayerController = ({
+  camera,
+  domElement,
+  setPlayerWalkIkActive,
+  initialControlTarget = CONTROL_TARGETS.camera,
+}) => {
   const controls = new PointerLockControls(camera, domElement)
   controls.pointerSpeed = WORLD_TUNING.pointerSpeed
   controls.minPolarAngle = WORLD_TUNING.minPolarAngle
@@ -25,16 +30,16 @@ export const createPlayerController = ({ camera, domElement, movePlayer }) => {
   }
 
   const moveIntent = new Vector2()
-  const playerMove = new Vector3()
-  const cameraForward = new Vector3()
-  const cameraRight = new Vector3()
-  let controlTarget = CONTROL_TARGETS.camera
+  let controlTarget = Object.values(CONTROL_TARGETS).includes(initialControlTarget)
+    ? initialControlTarget
+    : CONTROL_TARGETS.camera
 
   const resetMovement = () => {
     movement.forward = false
     movement.backward = false
     movement.left = false
     movement.right = false
+    setPlayerWalkIkActive?.(false)
   }
 
   const isCameraMoveKey = (code) => (
@@ -51,6 +56,11 @@ export const createPlayerController = ({ camera, domElement, movePlayer }) => {
   const handleKeyDown = (event) => {
     if (!controls.isLocked) return
     if (isCameraMoveKey(event.code)) event.preventDefault()
+
+    if (controlTarget === CONTROL_TARGETS.player) {
+      if (event.code === 'KeyW') setPlayerWalkIkActive?.(true)
+      return
+    }
 
     switch (event.code) {
       case 'KeyW':
@@ -75,6 +85,11 @@ export const createPlayerController = ({ camera, domElement, movePlayer }) => {
 
     if (event.code === 'AltLeft' || event.code === 'AltRight') {
       resetMovement()
+      return
+    }
+
+    if (controlTarget === CONTROL_TARGETS.player) {
+      if (event.code === 'KeyW') setPlayerWalkIkActive?.(false)
       return
     }
 
@@ -119,21 +134,8 @@ export const createPlayerController = ({ camera, domElement, movePlayer }) => {
 
       if (moveIntent.lengthSq() > 0) {
         moveIntent.normalize()
-        if (controlTarget === CONTROL_TARGETS.camera) {
-          controls.moveRight(moveIntent.x * MOVE_SPEED * delta)
-          controls.moveForward(moveIntent.y * MOVE_SPEED * delta)
-        } else {
-          camera.getWorldDirection(cameraForward)
-          cameraForward.y = 0
-          cameraForward.normalize()
-          cameraRight.crossVectors(cameraForward, camera.up).normalize()
-          playerMove
-            .copy(cameraRight)
-            .multiplyScalar(moveIntent.x)
-            .add(cameraForward.multiplyScalar(moveIntent.y))
-            .multiplyScalar(MOVE_SPEED * delta)
-          movePlayer(playerMove)
-        }
+        controls.moveRight(moveIntent.x * MOVE_SPEED * delta)
+        controls.moveForward(moveIntent.y * MOVE_SPEED * delta)
       }
     }
 
