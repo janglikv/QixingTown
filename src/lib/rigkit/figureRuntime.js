@@ -1,6 +1,5 @@
 // 提供把 rig definition 装配成可运行 figure 的通用工厂，包含骨架、渲染、支撑锁和姿态同步。
 import { createRigActionController } from './actionController.js'
-import { createRigBalanceController } from './balance.js'
 import { createRigContactLocks } from './contactLock.js'
 import { attachRigRuntimeUpdate } from './runtime.js'
 import {
@@ -63,15 +62,6 @@ export const createRigFigure = ({
       transitionDuration: actionOptions.transitionDuration,
     })
     : null
-  const balanceOptions = rig.definition.balance
-  const balance = balanceOptions
-    ? createRigBalanceController({
-      rig,
-      figure,
-      bones: skeleton.bones,
-      options: balanceOptions,
-    })
-    : null
   if (userAction) {
     figure.userData.playUserAction = (action) => {
       userAction.play(action)
@@ -89,7 +79,6 @@ export const createRigFigure = ({
     bones: skeleton.bones,
     skeletonRoot: skeleton.root,
     updatePose: userAction?.update,
-    updateBalance: balance?.update,
   })
 
   figure.userData.dispose = () => {
