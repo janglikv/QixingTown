@@ -14,7 +14,7 @@ const CONTROL_TARGETS = {
 export const createPlayerController = ({
   camera,
   domElement,
-  setPlayerWalkIkActive,
+  setPlayerForwardLeanActive,
   initialControlTarget = CONTROL_TARGETS.camera,
 }) => {
   const controls = new PointerLockControls(camera, domElement)
@@ -39,7 +39,7 @@ export const createPlayerController = ({
     movement.backward = false
     movement.left = false
     movement.right = false
-    setPlayerWalkIkActive?.(false)
+    setPlayerForwardLeanActive?.(false)
   }
 
   const isCameraMoveKey = (code) => (
@@ -58,7 +58,7 @@ export const createPlayerController = ({
     if (isCameraMoveKey(event.code)) event.preventDefault()
 
     if (controlTarget === CONTROL_TARGETS.player) {
-      if (event.code === 'KeyW') setPlayerWalkIkActive?.(true)
+      if (event.code === 'KeyW') setPlayerForwardLeanActive?.(true)
       return
     }
 
@@ -89,7 +89,7 @@ export const createPlayerController = ({
     }
 
     if (controlTarget === CONTROL_TARGETS.player) {
-      if (event.code === 'KeyW') setPlayerWalkIkActive?.(false)
+      if (event.code === 'KeyW') setPlayerForwardLeanActive?.(false)
       return
     }
 

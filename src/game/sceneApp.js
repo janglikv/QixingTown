@@ -256,7 +256,7 @@ export const createSceneApp = (app) => {
   const playerController = createPlayerController({
     camera,
     domElement: renderer.domElement,
-    setPlayerWalkIkActive: environment.setPlayerWalkIkActive,
+    setPlayerForwardLeanActive: environment.setPlayerForwardLeanActive,
     initialControlTarget: readControlTarget(),
   })
   const controlPointsVisible = readControlPointsVisible()

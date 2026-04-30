@@ -15,10 +15,24 @@ import {
   WORLD_TUNING,
 } from '../config.js'
 import { createGroundTexture } from './createGroundTexture.js'
-import { createPlayer, createPlayerWalkIkAction, PLAYER_MODEL_RIG } from './createPlayer.js'
+import { createCompassMarkers } from './createCompassMarkers.js'
+import { createPlayer, PLAYER_MODEL_RIG } from './createPlayer.js'
 import { createHelperMarkerSystem } from './helperMarkers.js'
 import { createPolaris, createStarField } from './createStarField.js'
 import { createTree } from './createTree.js'
+
+const PLAYER_FORWARD_LEAN_ACTION = {
+  id: 'player-forward-lean',
+  label: '前倾',
+  type: 'fk',
+  controls: [
+    {
+      bone: 'hip',
+      direction: 'backward',
+      angle: 16,
+    },
+  ],
+}
 
 export const createEnvironment = (scene) => {
   scene.background = new Color(WORLD_COLORS.sky)
@@ -47,6 +61,7 @@ export const createEnvironment = (scene) => {
 
   const starField = createStarField()
   const polaris = createPolaris()
+  const compassMarkers = createCompassMarkers()
   const player = createPlayer({
     name: 'player',
     position: [10.7, 2.15 / 2, -4],
@@ -68,16 +83,13 @@ export const createEnvironment = (scene) => {
   const playerState = {
     userActionId: null,
   }
-  const playerWalkState = {
-    active: false,
-    elapsed: 0,
-  }
+  let playerForwardLeanActive = false
   const ikTargetGroundCrossSize = 0.32
   const centerOfMassGroundCrossSize = 2
   const helperLineWidth = 0.004
   const centerOfMassPolygonLineWidth = 0.002
   const helperMarkers = createHelperMarkerSystem({ root: scene })
-  scene.add(starField, polaris, ...trees, player)
+  scene.add(starField, polaris, compassMarkers, ...trees, player)
 
   const groundTexture = createGroundTexture()
   const ground = new Mesh(
@@ -140,11 +152,6 @@ export const createEnvironment = (scene) => {
       WORLD_TUNING.polarisMinOpacity
       + twinkle * (WORLD_TUNING.polarisMaxOpacity - WORLD_TUNING.polarisMinOpacity)
     )
-    if (playerWalkState.active) {
-      playerWalkState.elapsed += delta
-      // 走路预置是逐帧 IK 目标，不写入用户动作列表。
-      player.userData.previewUserAction(createPlayerWalkIkAction(playerWalkState.elapsed))
-    }
     player.userData.update(delta)
     syncPlayerCenterOfMassMarker()
   }
@@ -328,7 +335,6 @@ export const createEnvironment = (scene) => {
   }
 
   const playPlayerUserAction = (action) => {
-    setPlayerWalkIkActive(false)
     playerState.userActionId = action.id
     syncPlayerIkTargetMarkers(null)
     player.userData.playUserAction(action)
@@ -345,14 +351,14 @@ export const createEnvironment = (scene) => {
     player.userData.cancelUserAction()
   }
 
-  const setPlayerWalkIkActive = (active) => {
-    if (playerWalkState.active === active) return
+  const setPlayerForwardLeanActive = (active) => {
+    if (playerForwardLeanActive === active) return
 
-    playerWalkState.active = active
-    playerWalkState.elapsed = 0
+    playerForwardLeanActive = active
     if (active) {
       playerState.userActionId = null
       syncPlayerIkTargetMarkers(null)
+      player.userData.playUserAction(PLAYER_FORWARD_LEAN_ACTION)
       return
     }
 
@@ -365,6 +371,7 @@ export const createEnvironment = (scene) => {
       moonLight,
       starField,
       polaris,
+      compassMarkers,
       ...trees,
       player,
       ground,
@@ -375,6 +382,7 @@ export const createEnvironment = (scene) => {
     polaris.geometry.dispose()
     polaris.userData.spriteTexture?.dispose()
     polaris.material.dispose()
+    compassMarkers.userData.dispose?.()
     trees.forEach((tree) => {
       tree.traverse((child) => {
         if (child.isMesh) child.geometry.dispose()
@@ -397,7 +405,7 @@ export const createEnvironment = (scene) => {
     playerState,
     setPlayerControlPointsVisible,
     setPlayerCenterOfMassVisible,
-    setPlayerWalkIkActive,
+    setPlayerForwardLeanActive,
     playPlayerUserAction,
     previewPlayerUserAction,
     cancelPlayerUserAction,
