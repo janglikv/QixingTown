@@ -350,6 +350,11 @@ export const createSceneApp = (app) => {
       actionWheel.open()
     }
     if (event.code === 'Escape') {
+      if (!playerController.controls.isLocked && actionSettingsPanel.handleEscape()) {
+        event.preventDefault()
+        return
+      }
+
       actionWheel.close()
     }
   }

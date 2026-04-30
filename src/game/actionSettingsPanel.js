@@ -198,6 +198,18 @@ export const createActionSettingsPanel = ({ app, controlsContainer = app, getIkT
     syncForm()
   }
 
+  const handleEscape = () => {
+    if (!visible) return false
+
+    if (getSelectedAction()) {
+      handleDetailClose()
+      return true
+    }
+
+    handleToggle()
+    return true
+  }
+
   button.textContent = '动作设置'
   applyButtonStyle(button)
   Object.assign(button.style, {
@@ -959,6 +971,7 @@ export const createActionSettingsPanel = ({ app, controlsContainer = app, getIkT
   })
 
   return {
+    handleEscape,
     syncCursorVisible: (cursorVisible) => {
       if (lastCursorVisible === cursorVisible) return
 

@@ -69,6 +69,7 @@ export const createHelperMarkerSystem = ({ root }) => {
       crossX: null,
       crossZ: null,
       disc: null,
+      edges: [],
     }
 
     markers.set(id, marker)
@@ -231,6 +232,60 @@ export const createHelperMarkerSystem = ({ root }) => {
     }
   }
 
+  const markGroundPolygon = ({
+    id,
+    parent = root,
+    points = [],
+    color = '#ffffff',
+    opacity = 1,
+    y = 0.012,
+    width = 0.004,
+    visible = true,
+    depthTest = true,
+  }) => {
+    const marker = markers.get(id) ?? createMarker(id)
+
+    syncParent(marker, parent)
+    marker.group.visible = visible && points.length >= 3
+    if (!marker.group.visible) return
+
+    marker.group.position.set(0, 0, 0)
+    points.forEach((point, index) => {
+      const next = points[(index + 1) % points.length]
+      const dx = next.x - point.x
+      const dz = next.z - point.z
+      const length = Math.hypot(dx, dz)
+      const edge = marker.edges[index] ?? createMesh({
+        geometry: UNIT_BOX,
+        color,
+        opacity,
+        depthTest,
+      })
+
+      if (!marker.edges[index]) {
+        edge.userData.isHelperMarker = true
+        marker.group.add(edge)
+        marker.edges[index] = edge
+      }
+
+      edge.visible = length > 0
+      edge.castShadow = false
+      edge.receiveShadow = true
+      edge.position.set((point.x + next.x) * 0.5, y, (point.z + next.z) * 0.5)
+      edge.rotation.set(0, -Math.atan2(dz, dx), 0)
+      edge.scale.set(length, width, width)
+      setMaterial(edge, {
+        color,
+        opacity,
+        depthTest,
+      })
+    })
+
+    marker.edges.slice(points.length).forEach((edge) => {
+      edge.visible = false
+    })
+  }
+
   const hide = (id) => {
     const marker = markers.get(id)
     if (marker) marker.group.visible = false
@@ -251,6 +306,7 @@ export const createHelperMarkerSystem = ({ root }) => {
         marker.crossX,
         marker.crossZ,
         marker.disc,
+        ...marker.edges,
       ].forEach((mesh) => {
         mesh?.material?.dispose()
       })
@@ -260,6 +316,7 @@ export const createHelperMarkerSystem = ({ root }) => {
 
   return {
     markPoint,
+    markGroundPolygon,
     hide,
     hidePrefix,
     dispose,

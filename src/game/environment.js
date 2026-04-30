@@ -72,10 +72,10 @@ export const createEnvironment = (scene) => {
     active: false,
     elapsed: 0,
   }
-  const ikTargetLineGroundDepth = 0.8
   const ikTargetGroundCrossSize = 0.32
   const centerOfMassGroundCrossSize = 2
   const helperLineWidth = 0.004
+  const centerOfMassPolygonLineWidth = 0.002
   const helperMarkers = createHelperMarkerSystem({ root: scene })
   scene.add(starField, polaris, ...trees, player)
 
@@ -98,6 +98,40 @@ export const createEnvironment = (scene) => {
   let polarisTwinkleTime = 0
   const centerOfMass = new Vector3()
   let playerCenterOfMassVisible = false
+
+  const getConvexHull = (points) => {
+    const sorted = [...points]
+      .sort((a, b) => (a.x === b.x ? a.z - b.z : a.x - b.x))
+      .filter((point, index, list) => (
+        index === 0
+        || point.x !== list[index - 1].x
+        || point.z !== list[index - 1].z
+      ))
+
+    if (sorted.length <= 2) return sorted
+
+    const cross = (origin, a, b) => (
+      (a.x - origin.x) * (b.z - origin.z)
+      - (a.z - origin.z) * (b.x - origin.x)
+    )
+    const lower = []
+    const upper = []
+
+    sorted.forEach((point) => {
+      while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], point) <= 0) {
+        lower.pop()
+      }
+      lower.push(point)
+    })
+    sorted.slice().reverse().forEach((point) => {
+      while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], point) <= 0) {
+        upper.pop()
+      }
+      upper.push(point)
+    })
+
+    return lower.slice(0, -1).concat(upper.slice(0, -1))
+  }
 
   const update = (delta) => {
     polarisTwinkleTime += delta * WORLD_TUNING.polarisTwinkleSpeed
@@ -136,45 +170,53 @@ export const createEnvironment = (scene) => {
     syncPlayerCenterOfMassMarker()
   }
 
-  const getPlayerCenterOfMass = () => {
+  const getPlayerCenterOfMassSnapshot = () => {
     let totalMass = 0
+    const groundPoints = []
 
     centerOfMass.set(0, 0, 0)
     player.updateMatrixWorld(true)
-    PLAYER_MODEL_RIG.boneNodes.forEach((bone) => {
-      if (typeof bone.parentKey !== 'string') return
+    PLAYER_MODEL_RIG.endBoneKeys.forEach((key) => {
+      const child = player.userData.bones[key]
+      if (!child) return
 
-      const parent = player.userData.bones[bone.parentKey]
-      const child = player.userData.bones[bone.key]
-      if (!parent || !child) return
+      const mass = PLAYER_MODEL_RIG.boneDefinitions[key].massScale ?? 1
+      if (mass <= 0) return
 
-      const mass = bone.length * (bone.massScale ?? 1)
-      const segmentCenter = parent
-        .getWorldPosition(new Vector3())
-        .add(child.getWorldPosition(new Vector3()))
-        .multiplyScalar(0.5)
+      const nodePosition = child.getWorldPosition(new Vector3())
+      const groundPoint = new Vector3(nodePosition.x, 0, nodePosition.z)
 
-      centerOfMass.add(segmentCenter.multiplyScalar(mass))
+      groundPoints.push(groundPoint)
+      centerOfMass.add(groundPoint.multiplyScalar(mass))
       totalMass += mass
     })
 
     if (totalMass <= 0) return null
 
-    // 当前只关心水平面上的质心投影，y 固定到地面，避免垂直抬高手脚影响显示判断。
+    // 当前只关心最终骨骼末端在水平面上的加权平均点。
     centerOfMass.multiplyScalar(1 / totalMass)
-    centerOfMass.y = 0
 
-    return centerOfMass.clone()
+    return {
+      position: centerOfMass.clone(),
+      polygon: getConvexHull(groundPoints),
+    }
   }
 
   const syncPlayerCenterOfMassMarker = () => {
     if (!playerCenterOfMassVisible) {
       helperMarkers.hide('player-center-of-mass')
+      helperMarkers.hide('player-center-of-mass-polygon')
       return
     }
 
-    const position = getPlayerCenterOfMass()
-    if (!position) return
+    const snapshot = getPlayerCenterOfMassSnapshot()
+    if (!snapshot) {
+      helperMarkers.hide('player-center-of-mass')
+      helperMarkers.hide('player-center-of-mass-polygon')
+      return
+    }
+
+    const { position, polygon } = snapshot
 
     // 质心和地面投影都使用世界坐标，避免和 player 局部坐标混淆。
     helperMarkers.markPoint({
@@ -195,6 +237,14 @@ export const createEnvironment = (scene) => {
         width: helperLineWidth,
         opacity: 0.9,
       },
+    })
+    helperMarkers.markGroundPolygon({
+      id: 'player-center-of-mass-polygon',
+      points: polygon,
+      color: '#5aa7ff',
+      opacity: 0.28,
+      y: 0.014,
+      width: centerOfMassPolygonLineWidth,
     })
   }
 
@@ -235,10 +285,18 @@ export const createEnvironment = (scene) => {
 
       const selected = target.id === activeIkTargetId
 
+      const targetPosition = new Vector3(position.x, position.y, position.z)
+      const targetWorldPosition = player.localToWorld(targetPosition.clone())
+      const groundLocalPosition = player.worldToLocal(new Vector3(
+        targetWorldPosition.x,
+        0,
+        targetWorldPosition.z,
+      ))
+
       helperMarkers.markPoint({
         id: `ik-target-${target.id}`,
         parent: player,
-        position: new Vector3(position.x, position.y, position.z),
+        position: targetPosition,
         color: '#ff2d2d',
         opacity: selected ? 1 : 0.38,
         visible: true,
@@ -247,14 +305,14 @@ export const createEnvironment = (scene) => {
           depthTest: false,
         },
         verticalLine: {
-          fromY: -ikTargetLineGroundDepth,
+          fromY: groundLocalPosition.y,
           width: helperLineWidth,
           opacity: selected ? 0.85 : 0.35,
           depthTest: false,
         },
         groundCross: {
           halfSize: ikTargetGroundCrossSize,
-          y: -ikTargetLineGroundDepth + 0.01,
+          y: groundLocalPosition.y + 0.01,
           width: helperLineWidth,
           opacity: selected ? 0.9 : 0.35,
           depthTest: true,
