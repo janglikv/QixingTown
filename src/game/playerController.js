@@ -14,7 +14,7 @@ const CONTROL_TARGETS = {
 export const createPlayerController = ({
   camera,
   domElement,
-  setPlayerForwardLeanActive,
+  movePlayer,
   initialControlTarget = CONTROL_TARGETS.camera,
 }) => {
   const controls = new PointerLockControls(camera, domElement)
@@ -39,7 +39,6 @@ export const createPlayerController = ({
     movement.backward = false
     movement.left = false
     movement.right = false
-    setPlayerForwardLeanActive?.(false)
   }
 
   const isCameraMoveKey = (code) => (
@@ -49,18 +48,18 @@ export const createPlayerController = ({
     || code === 'KeyD'
   )
 
+  const isTypingTarget = (target) => (
+    ['INPUT', 'SELECT', 'TEXTAREA'].includes(target?.tagName)
+  )
+
   const lockOnClick = () => {
     if (!controls.isLocked) controls.lock()
   }
 
   const handleKeyDown = (event) => {
-    if (!controls.isLocked) return
+    if (!controls.isLocked && controlTarget !== CONTROL_TARGETS.player) return
+    if (controlTarget === CONTROL_TARGETS.player && isTypingTarget(event.target)) return
     if (isCameraMoveKey(event.code)) event.preventDefault()
-
-    if (controlTarget === CONTROL_TARGETS.player) {
-      if (event.code === 'KeyW') setPlayerForwardLeanActive?.(true)
-      return
-    }
 
     switch (event.code) {
       case 'KeyW':
@@ -81,15 +80,12 @@ export const createPlayerController = ({
   }
 
   const handleKeyUp = (event) => {
+    if (!controls.isLocked && controlTarget !== CONTROL_TARGETS.player) return
+    if (controlTarget === CONTROL_TARGETS.player && isTypingTarget(event.target)) return
     if (isCameraMoveKey(event.code)) event.preventDefault()
 
     if (event.code === 'AltLeft' || event.code === 'AltRight') {
       resetMovement()
-      return
-    }
-
-    if (controlTarget === CONTROL_TARGETS.player) {
-      if (event.code === 'KeyW') setPlayerForwardLeanActive?.(false)
       return
     }
 
@@ -126,7 +122,7 @@ export const createPlayerController = ({
   window.addEventListener('keyup', handleKeyUp)
 
   const update = (delta) => {
-    if (controls.isLocked) {
+    if (controls.isLocked || controlTarget === CONTROL_TARGETS.player) {
       moveIntent.set(
         Number(movement.right) - Number(movement.left),
         Number(movement.forward) - Number(movement.backward),
@@ -134,8 +130,15 @@ export const createPlayerController = ({
 
       if (moveIntent.lengthSq() > 0) {
         moveIntent.normalize()
-        controls.moveRight(moveIntent.x * MOVE_SPEED * delta)
-        controls.moveForward(moveIntent.y * MOVE_SPEED * delta)
+        if (controlTarget === CONTROL_TARGETS.player) {
+          movePlayer?.({
+            x: moveIntent.x * MOVE_SPEED * delta,
+            z: -moveIntent.y * MOVE_SPEED * delta,
+          })
+        } else {
+          controls.moveRight(moveIntent.x * MOVE_SPEED * delta)
+          controls.moveForward(moveIntent.y * MOVE_SPEED * delta)
+        }
       }
     }
 

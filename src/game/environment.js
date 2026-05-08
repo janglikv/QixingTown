@@ -21,19 +21,6 @@ import { createHelperMarkerSystem } from './helperMarkers.js'
 import { createPolaris, createStarField } from './createStarField.js'
 import { createTree } from './createTree.js'
 
-const PLAYER_FORWARD_LEAN_ACTION = {
-  id: 'player-forward-lean',
-  label: '前倾',
-  type: 'fk',
-  controls: [
-    {
-      bone: 'hip',
-      direction: 'backward',
-      angle: 16,
-    },
-  ],
-}
-
 export const createEnvironment = (scene) => {
   scene.background = new Color(WORLD_COLORS.sky)
   scene.fog = new FogExp2(WORLD_COLORS.fog, WORLD_TUNING.fogDensity)
@@ -83,7 +70,6 @@ export const createEnvironment = (scene) => {
   const playerState = {
     userActionId: null,
   }
-  let playerForwardLeanActive = false
   const ikTargetGroundCrossSize = 0.32
   const centerOfMassGroundCrossSize = 2
   const helperLineWidth = 0.004
@@ -351,18 +337,16 @@ export const createEnvironment = (scene) => {
     player.userData.cancelUserAction()
   }
 
-  const setPlayerForwardLeanActive = (active) => {
-    if (playerForwardLeanActive === active) return
+  const movePlayer = ({ x = 0, z = 0 }) => {
+    if (x === 0 && z === 0) return
 
-    playerForwardLeanActive = active
-    if (active) {
-      playerState.userActionId = null
-      syncPlayerIkTargetMarkers(null)
-      player.userData.playUserAction(PLAYER_FORWARD_LEAN_ACTION)
-      return
-    }
+    const offset = new Vector3(x, 0, z)
 
-    player.userData.cancelUserAction()
+    player.position.x += x
+    player.position.z += z
+    Object.values(player.userData.contactLocks ?? {}).forEach((contactLock) => {
+      contactLock.worldTarget.add(offset)
+    })
   }
 
   const dispose = () => {
@@ -405,7 +389,7 @@ export const createEnvironment = (scene) => {
     playerState,
     setPlayerControlPointsVisible,
     setPlayerCenterOfMassVisible,
-    setPlayerForwardLeanActive,
+    movePlayer,
     playPlayerUserAction,
     previewPlayerUserAction,
     cancelPlayerUserAction,
