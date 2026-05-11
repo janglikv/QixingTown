@@ -237,7 +237,7 @@ export const createActionSettingsPanel = ({ app, getIkTargetPosition }) => {
     top: '16px',
     zIndex: '12',
     display: 'none',
-    width: '430px',
+    width: '520px',
     maxWidth: 'calc(100vw - 28px)',
     padding: '12px',
     border: '1px solid rgba(238, 245, 238, 0.18)',
@@ -299,7 +299,7 @@ export const createActionSettingsPanel = ({ app, getIkTargetPosition }) => {
     overflowY: 'auto',
   })
 
-  controlHeader.replaceChildren(...['关节', '方向', '角度', ''].map((label) => {
+  controlHeader.replaceChildren(...['关节', '方向', '角度', '排序', ''].map((label) => {
     const item = document.createElement('span')
     item.textContent = label
     Object.assign(item.style, {
@@ -310,7 +310,7 @@ export const createActionSettingsPanel = ({ app, getIkTargetPosition }) => {
   }))
   Object.assign(controlHeader.style, {
     display: 'grid',
-    gridTemplateColumns: '1fr 1fr 80px 52px',
+    gridTemplateColumns: '1fr 1fr 80px 96px 52px',
     gap: '8px',
     marginBottom: '6px',
   })
@@ -559,7 +559,7 @@ export const createActionSettingsPanel = ({ app, getIkTargetPosition }) => {
     controlTitle.textContent = isIk ? 'IK端点' : '关节运动'
     addControlButton.textContent = isIk ? '新增IK' : '新增关节'
     emptyControlText.textContent = isIk ? '暂无IK端点' : '暂无关节运动'
-    controlHeader.replaceChildren(...(isIk ? ['IK链', 'X', 'Y', 'Z', ''] : ['关节', '方向', '角度', '']).map((label) => {
+    controlHeader.replaceChildren(...(isIk ? ['IK链', 'X', 'Y', 'Z', '排序', ''] : ['关节', '方向', '角度', '排序', '']).map((label) => {
       const item = document.createElement('span')
       item.textContent = label
       Object.assign(item.style, {
@@ -568,16 +568,19 @@ export const createActionSettingsPanel = ({ app, getIkTargetPosition }) => {
       })
       return item
     }))
-    controlHeader.style.gridTemplateColumns = isIk ? '1fr 64px 64px 64px 52px' : '1fr 1fr 80px 52px'
+    controlHeader.style.gridTemplateColumns = isIk ? '1fr 64px 64px 64px 96px 52px' : '1fr 1fr 80px 96px 52px'
     emptyControlText.style.display = rows.length === 0 ? 'block' : 'none'
 
     if (isIk) {
-      draftIkTargets.forEach((target) => {
+      draftIkTargets.forEach((target, index) => {
         const row = document.createElement('div')
         const chainSelect = createSelectInput(PLAYER_ACTION_IK_CHAIN_OPTIONS)
         const xInput = createTextInput()
         const yInput = createTextInput()
         const zInput = createTextInput()
+        const moveGroup = document.createElement('div')
+        const moveUpButton = document.createElement('button')
+        const moveDownButton = document.createElement('button')
         const removeButton = document.createElement('button')
 
         chainSelect.value = target.chain
@@ -590,12 +593,31 @@ export const createActionSettingsPanel = ({ app, getIkTargetPosition }) => {
           input.step = '0.01'
           input.value = String(target.position?.[key] ?? 0)
         })
+        moveUpButton.type = 'button'
+        moveDownButton.type = 'button'
+        moveUpButton.textContent = '上移'
+        moveDownButton.textContent = '下移'
+        moveUpButton.disabled = index === 0
+        moveDownButton.disabled = index === draftIkTargets.length - 1
         removeButton.type = 'button'
         removeButton.textContent = '删除'
+        applyButtonStyle(moveUpButton)
+        applyButtonStyle(moveDownButton)
         applyButtonStyle(removeButton, 'danger')
+        Object.assign(moveGroup.style, {
+          display: 'grid',
+          gridTemplateColumns: '1fr 1fr',
+          gap: '4px',
+        })
+        Object.assign(moveUpButton.style, {
+          padding: '0 6px',
+        })
+        Object.assign(moveDownButton.style, {
+          padding: '0 6px',
+        })
         Object.assign(row.style, {
           display: 'grid',
-          gridTemplateColumns: '1fr 64px 64px 64px 52px',
+          gridTemplateColumns: '1fr 64px 64px 64px 96px 52px',
           gap: '8px',
           alignItems: 'center',
           padding: '4px',
@@ -625,6 +647,24 @@ export const createActionSettingsPanel = ({ app, getIkTargetPosition }) => {
             updateDraftIkTarget({ id: target.id, key, value: Number(input.value) })
           })
         })
+        moveUpButton.addEventListener('click', () => {
+          if (index === 0) return
+
+          const nextTargets = [...draftIkTargets]
+          ;[nextTargets[index - 1], nextTargets[index]] = [nextTargets[index], nextTargets[index - 1]]
+          draftIkTargets = nextTargets
+          renderControlList()
+          dispatchDraftPreview()
+        })
+        moveDownButton.addEventListener('click', () => {
+          if (index >= draftIkTargets.length - 1) return
+
+          const nextTargets = [...draftIkTargets]
+          ;[nextTargets[index], nextTargets[index + 1]] = [nextTargets[index + 1], nextTargets[index]]
+          draftIkTargets = nextTargets
+          renderControlList()
+          dispatchDraftPreview()
+        })
         removeButton.addEventListener('click', () => {
           draftIkTargets = draftIkTargets.filter((item) => item.id !== target.id)
           activeIkTargetId = draftIkTargets[0]?.id ?? null
@@ -632,17 +672,21 @@ export const createActionSettingsPanel = ({ app, getIkTargetPosition }) => {
           dispatchDraftPreview()
         })
 
-        row.append(chainSelect, xInput, yInput, zInput, removeButton)
+        moveGroup.append(moveUpButton, moveDownButton)
+        row.append(chainSelect, xInput, yInput, zInput, moveGroup, removeButton)
         controlList.append(row)
       })
       return
     }
 
-    draftControls.forEach((control) => {
+    draftControls.forEach((control, index) => {
       const row = document.createElement('div')
       const boneSelect = createSelectInput(PLAYER_ACTION_BONE_OPTIONS)
       const directionSelect = createSelectInput(JOINT_DIRECTIONS)
       const angleInput = createTextInput()
+      const moveGroup = document.createElement('div')
+      const moveUpButton = document.createElement('button')
+      const moveDownButton = document.createElement('button')
       const removeButton = document.createElement('button')
 
       boneSelect.value = control.bone
@@ -650,12 +694,31 @@ export const createActionSettingsPanel = ({ app, getIkTargetPosition }) => {
       angleInput.type = 'number'
       angleInput.step = '1'
       angleInput.value = String(control.angle)
+      moveUpButton.type = 'button'
+      moveDownButton.type = 'button'
+      moveUpButton.textContent = '上移'
+      moveDownButton.textContent = '下移'
+      moveUpButton.disabled = index === 0
+      moveDownButton.disabled = index === draftControls.length - 1
       removeButton.type = 'button'
       removeButton.textContent = '删除'
+      applyButtonStyle(moveUpButton)
+      applyButtonStyle(moveDownButton)
       applyButtonStyle(removeButton, 'danger')
+      Object.assign(moveGroup.style, {
+        display: 'grid',
+        gridTemplateColumns: '1fr 1fr',
+        gap: '4px',
+      })
+      Object.assign(moveUpButton.style, {
+        padding: '0 6px',
+      })
+      Object.assign(moveDownButton.style, {
+        padding: '0 6px',
+      })
       Object.assign(row.style, {
         display: 'grid',
-        gridTemplateColumns: '1fr 1fr 80px 52px',
+        gridTemplateColumns: '1fr 1fr 80px 96px 52px',
         gap: '8px',
         alignItems: 'center',
       })
@@ -669,13 +732,32 @@ export const createActionSettingsPanel = ({ app, getIkTargetPosition }) => {
       angleInput.addEventListener('input', () => {
         updateDraftControl({ id: control.id, key: 'angle', value: Number(angleInput.value) })
       })
+      moveUpButton.addEventListener('click', () => {
+        if (index === 0) return
+
+        const nextControls = [...draftControls]
+        ;[nextControls[index - 1], nextControls[index]] = [nextControls[index], nextControls[index - 1]]
+        draftControls = nextControls
+        renderControlList()
+        dispatchDraftPreview()
+      })
+      moveDownButton.addEventListener('click', () => {
+        if (index >= draftControls.length - 1) return
+
+        const nextControls = [...draftControls]
+        ;[nextControls[index], nextControls[index + 1]] = [nextControls[index + 1], nextControls[index]]
+        draftControls = nextControls
+        renderControlList()
+        dispatchDraftPreview()
+      })
       removeButton.addEventListener('click', () => {
         draftControls = draftControls.filter((item) => item.id !== control.id)
         renderControlList()
         dispatchDraftPreview()
       })
 
-      row.append(boneSelect, directionSelect, angleInput, removeButton)
+      moveGroup.append(moveUpButton, moveDownButton)
+      row.append(boneSelect, directionSelect, angleInput, moveGroup, removeButton)
       controlList.append(row)
     })
   }
@@ -685,14 +767,29 @@ export const createActionSettingsPanel = ({ app, getIkTargetPosition }) => {
     emptyText.style.display = actions.length === 0 ? 'block' : 'none'
 
     actions.forEach((action) => {
+      const row = document.createElement('div')
       const item = document.createElement('button')
+      const copyButton = document.createElement('button')
+
       item.type = 'button'
       item.textContent = action.label
+      copyButton.type = 'button'
+      copyButton.textContent = '复制'
       applyButtonStyle(item)
+      applyButtonStyle(copyButton)
+      Object.assign(row.style, {
+        display: 'grid',
+        gridTemplateColumns: '1fr 56px',
+        gap: '6px',
+        alignItems: 'center',
+      })
       Object.assign(item.style, {
         width: '100%',
         textAlign: 'left',
         background: action.id === selectedId ? 'rgba(83, 127, 214, 0.42)' : 'rgba(238, 245, 238, 0.08)',
+      })
+      Object.assign(copyButton.style, {
+        padding: '0 8px',
       })
       item.addEventListener('click', () => {
         selectedId = action.id
@@ -700,7 +797,11 @@ export const createActionSettingsPanel = ({ app, getIkTargetPosition }) => {
         renderList()
         syncForm()
       })
-      list.append(item)
+      copyButton.addEventListener('click', () => {
+        handleCopy(action)
+      })
+      row.append(item, copyButton)
+      list.append(row)
     })
   }
 
@@ -720,6 +821,27 @@ export const createActionSettingsPanel = ({ app, getIkTargetPosition }) => {
       id: createId(),
       label: `新动作 ${actions.length + 1}`,
       controls: [],
+    }
+
+    actions = [...actions, nextAction]
+    selectedId = nextAction.id
+    persistAndRender()
+  }
+
+  const handleCopy = (sourceAction) => {
+    const nextAction = {
+      ...sourceAction,
+      id: createId(),
+      controls: Array.isArray(sourceAction.controls)
+        ? sourceAction.controls.map((control) => ({ ...control, id: createId() }))
+        : [],
+      ikTargets: Array.isArray(sourceAction.ikTargets)
+        ? sourceAction.ikTargets.map((target) => ({
+          ...target,
+          id: createId(),
+          position: { ...target.position },
+        }))
+        : [],
     }
 
     actions = [...actions, nextAction]

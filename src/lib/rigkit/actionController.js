@@ -172,9 +172,10 @@ export const createRigActionController = ({
     })
   }
 
-  const setTarget = ({ action, immediate = false }) => {
+  const setTarget = ({ action, immediate = false, transitionDuration: nextTransitionDuration = transitionDuration }) => {
     const controls = Array.isArray(action?.controls) ? action.controls : []
     const ikTargets = Array.isArray(action?.ikTargets) ? action.ikTargets : []
+    const duration = Math.max(0, nextTransitionDuration)
 
     state.action = {
       ...action,
@@ -182,6 +183,7 @@ export const createRigActionController = ({
       controls,
       ikTargets,
     }
+    state.transitionDuration = duration
     state.fromRotations = { ...state.currentRotations }
     state.targetRotations = createTargetRotations(state.action)
     state.targetIkTargets = createTargetIkTargets(state.action)
@@ -244,7 +246,9 @@ export const createRigActionController = ({
       state.transitionElapsed + delta,
       state.transitionDuration,
     )
-    const amount = smoothStep(state.transitionElapsed / state.transitionDuration)
+    const amount = state.transitionDuration === 0
+      ? 1
+      : smoothStep(state.transitionElapsed / state.transitionDuration)
     const nextRotations = {}
 
     restoreAllPositions()
@@ -295,7 +299,7 @@ export const createRigActionController = ({
 
   return {
     cancel,
-    play: (action) => setTarget({ action }),
+    play: (action, options = {}) => setTarget({ action, transitionDuration: options.transitionDuration }),
     preview: (action) => setTarget({ action, immediate: true }),
     update,
   }

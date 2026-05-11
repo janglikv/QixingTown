@@ -1,5 +1,6 @@
 import { PerspectiveCamera, Scene, SRGBColorSpace, Timer, WebGLRenderer } from 'three'
 import { CAMERA_HEIGHT, WORLD_TUNING } from '../config.js'
+import { createActionSequencePanel, readUserActionSequences } from './actionSequencePanel.js'
 import { createActionSettingsPanel, readUserActions } from './actionSettingsPanel.js'
 import { createActionWheel } from './actionWheel.js'
 import { createEnvironment } from './environment.js'
@@ -20,6 +21,7 @@ const CAMERA_STATE_STORAGE_KEY = 'qixing-town:camera-state'
 const CAMERA_STATE_SAVE_INTERVAL = 250
 const CONTROL_POINTS_VISIBLE_STORAGE_KEY = 'qixing-town:control-points-visible'
 const CONTROL_TARGET_STORAGE_KEY = 'qixing-town:control-target'
+const DEFAULT_ACTION_SEQUENCE_STEP_DURATION = 0.9
 
 const isFiniteNumberArray = (value, length) => (
   Array.isArray(value)
@@ -239,22 +241,149 @@ export const createSceneApp = (app) => {
     app,
     getIkTargetPosition: environment.getPlayerIkTargetPosition,
   })
+  const actionSequencePanel = createActionSequencePanel({ app })
+  const actionSequenceState = {
+    sequenceId: null,
+    steps: [],
+    index: 0,
+    elapsed: 0,
+  }
+
+  const clearActionSequenceState = () => {
+    actionSequenceState.sequenceId = null
+    actionSequenceState.steps = []
+    actionSequenceState.index = 0
+    actionSequenceState.elapsed = 0
+  }
+
+  const createSequenceSteps = (sequence, visitedSequenceIds = new Set()) => {
+    const actionsById = new Map(readUserActions().map((action) => [action.id, action]))
+    const sequencesById = new Map(readUserActionSequences().map((item) => [item.id, item]))
+    const nextVisitedSequenceIds = new Set([...visitedSequenceIds, sequence.id])
+
+    return sequence.steps.flatMap((step) => {
+      if (step.type === 'action') {
+        const action = actionsById.get(step.targetId)
+
+        return action
+          ? [{
+            action,
+            duration: Number.isFinite(step.duration)
+              ? Math.max(0, step.duration)
+              : DEFAULT_ACTION_SEQUENCE_STEP_DURATION,
+          }]
+          : []
+      }
+
+      if (step.type === 'sequence') {
+        const nestedSequence = sequencesById.get(step.targetId)
+        // 嵌套序列只展开步骤，不继承循环；已访问集合用于阻止循环引用。
+        if (!nestedSequence || nextVisitedSequenceIds.has(nestedSequence.id)) return []
+
+        const repeat = Math.max(1, Math.floor(step.repeat))
+        const nestedSteps = createSequenceSteps(nestedSequence, nextVisitedSequenceIds)
+
+        return Array.from({ length: repeat }).flatMap(() => nestedSteps)
+      }
+
+      if (step.type === 'delay') {
+        return [{
+          action: null,
+          duration: Number.isFinite(step.duration)
+            ? Math.max(0, step.duration)
+            : DEFAULT_ACTION_SEQUENCE_STEP_DURATION,
+        }]
+      }
+
+      return []
+    })
+  }
+
+  const playActionSequenceAtIndex = () => {
+    const step = actionSequenceState.steps[actionSequenceState.index]
+    if (!step) return
+    if (!step.action) return
+
+    environment.playPlayerUserAction(step.action, {
+      transitionDuration: step.duration,
+    })
+  }
+
+  const startActionSequence = (sequence) => {
+    const sequenceSteps = createSequenceSteps(sequence)
+    if (sequenceSteps.length === 0) return
+
+    actionSequenceState.sequenceId = sequence.id
+    actionSequenceState.steps = sequenceSteps
+    actionSequenceState.index = 0
+    actionSequenceState.elapsed = 0
+    playActionSequenceAtIndex()
+  }
+
+  const updateActionSequence = (delta) => {
+    if (!actionSequenceState.sequenceId) return
+
+    actionSequenceState.elapsed += delta
+    const step = actionSequenceState.steps[actionSequenceState.index]
+    if (!step) {
+      clearActionSequenceState()
+      return
+    }
+    if (actionSequenceState.elapsed < step.duration) return
+
+    const sequence = readUserActionSequences()
+      .find((item) => item.id === actionSequenceState.sequenceId)
+    if (!sequence) {
+      clearActionSequenceState()
+      return
+    }
+
+    actionSequenceState.elapsed = 0
+    actionSequenceState.index += 1
+    if (actionSequenceState.index >= actionSequenceState.steps.length) {
+      if (!sequence.loop) {
+        clearActionSequenceState()
+        return
+      }
+      actionSequenceState.index = 0
+    }
+    playActionSequenceAtIndex()
+  }
+
   const createUserActionWheelActions = () => readUserActions().map((action) => ({
     label: action.label,
     isActive: () => environment.playerState.userActionId === action.id,
     toggle: () => {
       if (environment.playerState.userActionId === action.id) {
+        clearActionSequenceState()
         environment.cancelPlayerUserAction()
       } else {
+        clearActionSequenceState()
         environment.playPlayerUserAction(action)
       }
+    },
+  }))
+  const createUserActionSequenceWheelActions = () => readUserActionSequences().map((sequence) => ({
+    label: `序列：${sequence.label}`,
+    isActive: () => actionSequenceState.sequenceId === sequence.id,
+    toggle: () => {
+      if (actionSequenceState.sequenceId === sequence.id) {
+        clearActionSequenceState()
+        environment.cancelPlayerUserAction()
+        return
+      }
+
+      startActionSequence(sequence)
     },
   }))
   const createPlayerActionWheel = () => createActionWheel({
     scene,
     camera,
     domElement: renderer.domElement,
-    actions: createUserActionWheelActions(),
+    actions: [
+      ...createUserActionWheelActions(),
+      ...createUserActionSequenceWheelActions(),
+    ],
     onOpenChange: (open) => {
       playerController.controls.enabled = !open
     },
@@ -329,6 +458,25 @@ export const createSceneApp = (app) => {
     ) {
       environment.cancelPlayerUserAction()
     }
+    if (
+      actionSequenceState.sequenceId
+      && !readUserActionSequences().some((sequence) => sequence.id === actionSequenceState.sequenceId)
+    ) {
+      clearActionSequenceState()
+    }
+    if (actionSequenceState.sequenceId) {
+      const sequence = readUserActionSequences()
+        .find((item) => item.id === actionSequenceState.sequenceId)
+      const sequenceSteps = sequence ? createSequenceSteps(sequence) : []
+
+      if (sequenceSteps.length === 0) {
+        clearActionSequenceState()
+      } else {
+        // 动作列表变更后刷新序列引用，避免继续播放已删除动作的旧快照。
+        actionSequenceState.steps = sequenceSteps
+        actionSequenceState.index = Math.min(actionSequenceState.index, sequenceSteps.length - 1)
+      }
+    }
     actionWheel.close()
     actionWheel.dispose()
     actionWheel = createPlayerActionWheel()
@@ -341,6 +489,7 @@ export const createSceneApp = (app) => {
   app.addEventListener('qixing-town:play-action', onPlayUserAction)
   app.addEventListener('qixing-town:clear-ik-target-markers', onClearIkTargetMarkers)
   app.addEventListener('qixing-town:user-actions-changed', rebuildActionWheel)
+  app.addEventListener('qixing-town:action-sequences-changed', rebuildActionWheel)
 
   let animationFrameId = 0
 
@@ -353,6 +502,8 @@ export const createSceneApp = (app) => {
     controlPointToggle.syncCursorVisible(cursorVisible)
     controlTargetIndicator.syncCursorVisible(cursorVisible)
     actionSettingsPanel.syncCursorVisible(cursorVisible)
+    actionSequencePanel.syncCursorVisible(cursorVisible)
+    updateActionSequence(delta)
     environment.update(delta)
     actionWheel.update()
     environment.updateGroundPosition(camera.position)
@@ -378,10 +529,12 @@ export const createSceneApp = (app) => {
     app.removeEventListener('qixing-town:play-action', onPlayUserAction)
     app.removeEventListener('qixing-town:clear-ik-target-markers', onClearIkTargetMarkers)
     app.removeEventListener('qixing-town:user-actions-changed', rebuildActionWheel)
+    app.removeEventListener('qixing-town:action-sequences-changed', rebuildActionWheel)
     persistCameraStateOnUnload()
     controlPointToggle.dispose()
     controlTargetIndicator.dispose()
     actionSettingsPanel.dispose()
+    actionSequencePanel.dispose()
     actionWheel.dispose()
     playerController.dispose()
     environment.dispose()

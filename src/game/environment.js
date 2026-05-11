@@ -199,11 +199,11 @@ export const createEnvironment = (scene) => {
     })
   }
 
-  const playPlayerUserAction = (action) => {
+  const playPlayerUserAction = (action, options) => {
     setPlayerWalkIkActive(false)
     playerState.userActionId = action.id
     syncPlayerIkTargetMarkers(null)
-    player.userData.playUserAction(action)
+    player.userData.playUserAction(action, options)
   }
 
   const previewPlayerUserAction = (action) => {

@@ -73,8 +73,8 @@ export const createRigFigure = ({
     })
     : null
   if (userAction) {
-    figure.userData.playUserAction = (action) => {
-      userAction.play(action)
+    figure.userData.playUserAction = (action, options) => {
+      userAction.play(action, options)
     }
     figure.userData.previewUserAction = (action) => {
       userAction.preview(action)
