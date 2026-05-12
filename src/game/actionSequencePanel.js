@@ -3,8 +3,98 @@ import { readUserActions, serializeActions } from './actionSettingsPanel.js'
 const ACTION_SEQUENCES_STORAGE_KEY = 'qixing-town:action-sequences'
 const PANEL_STATE_STORAGE_KEY = 'qixing-town:action-sequence-panel'
 const DEFAULT_ACTION_STEP_DURATION = 0.9
+const POSITION_AXIS_OPTIONS = [
+  { value: 'x', label: 'X' },
+  { value: 'y', label: 'Y' },
+  { value: 'z', label: 'Z' },
+]
 
 const createId = () => `action-sequence-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`
+
+const normalizeStep = (step) => {
+  if (typeof step?.id !== 'string') return null
+  if (step?.type === 'delay') {
+    return {
+      id: step.id,
+      type: 'delay',
+      targetId: '',
+      repeat: 1,
+      duration: Number.isFinite(step.duration) ? step.duration : DEFAULT_ACTION_STEP_DURATION,
+    }
+  }
+
+  if (step?.type === 'position') {
+    const axis = ['x', 'y', 'z'].includes(step.axis)
+      ? step.axis
+      : ['x', 'y', 'z'].includes(step.targetId)
+        ? step.targetId
+        : 'y'
+
+    return {
+      id: step.id,
+      type: 'position',
+      targetId: axis,
+      axis,
+      amount: Number.isFinite(step.amount) ? step.amount : 0,
+      repeat: 1,
+      duration: Number.isFinite(step.duration) ? step.duration : DEFAULT_ACTION_STEP_DURATION,
+    }
+  }
+
+  if (typeof step?.type === 'string' && typeof step?.targetId === 'string') {
+    return {
+      ...step,
+      type: step.type === 'sequence' ? 'sequence' : 'action',
+      repeat: step.type === 'sequence' && Number.isFinite(step.repeat) ? step.repeat : 1,
+      duration: step.type === 'action' && Number.isFinite(step.duration)
+        ? step.duration
+        : DEFAULT_ACTION_STEP_DURATION,
+    }
+  }
+
+  return typeof step?.actionId === 'string'
+    ? {
+      id: step.id,
+      type: 'action',
+      targetId: step.actionId,
+      repeat: 1,
+      duration: DEFAULT_ACTION_STEP_DURATION,
+    }
+    : null
+}
+
+const normalizeSteps = (steps) => (
+  Array.isArray(steps)
+    ? steps.map(normalizeStep).filter(Boolean)
+    : []
+)
+
+const createLegacyTrack = (sequence) => ({
+  id: `${sequence.id}-track-main`,
+  label: '主轨道',
+  loop: sequence.loop === true,
+  steps: normalizeSteps(sequence.steps),
+})
+
+export const normalizeActionSequence = (sequence) => {
+  const tracks = Array.isArray(sequence.tracks) && sequence.tracks.length > 0
+    ? sequence.tracks.filter((track) => typeof track?.id === 'string').map((track, index) => ({
+      id: track.id,
+      label: typeof track.label === 'string' && track.label.trim()
+        ? track.label
+        : `轨道 ${index + 1}`,
+      loop: track.loop === true,
+      steps: normalizeSteps(track.steps),
+    }))
+    : [createLegacyTrack(sequence)]
+
+  return {
+    ...sequence,
+    loop: sequence.loop === true,
+    steps: tracks[0]?.steps ?? [],
+    tracks,
+  }
+}
 
 export const readUserActionSequences = () => {
   try {
@@ -15,44 +105,7 @@ export const readUserActionSequences = () => {
     return sequences.filter((sequence) => (
       typeof sequence?.id === 'string'
       && typeof sequence?.label === 'string'
-    )).map((sequence) => ({
-      ...sequence,
-      loop: sequence.loop === true,
-      steps: Array.isArray(sequence.steps)
-        ? sequence.steps.map((step) => {
-          if (typeof step?.id !== 'string') return null
-          if (step?.type === 'delay') {
-            return {
-              id: step.id,
-              type: 'delay',
-              targetId: '',
-              repeat: 1,
-              duration: Number.isFinite(step.duration) ? step.duration : DEFAULT_ACTION_STEP_DURATION,
-            }
-          }
-
-          if (typeof step?.type === 'string' && typeof step?.targetId === 'string') {
-            return {
-              ...step,
-              repeat: step.type === 'sequence' && Number.isFinite(step.repeat) ? step.repeat : 1,
-              duration: step.type === 'action' && Number.isFinite(step.duration)
-                ? step.duration
-                : DEFAULT_ACTION_STEP_DURATION,
-            }
-          }
-
-          return typeof step?.actionId === 'string'
-            ? {
-              id: step.id,
-              type: 'action',
-              targetId: step.actionId,
-              repeat: 1,
-              duration: DEFAULT_ACTION_STEP_DURATION,
-            }
-            : null
-        }).filter(Boolean)
-        : [],
-    }))
+    )).map(normalizeActionSequence)
   } catch {
     return []
   }
@@ -170,7 +223,8 @@ export const createActionSequencePanel = ({ app }) => {
     : null
   let visible = initialPanelState.visible
   let lastCursorVisible = null
-  let draftSteps = []
+  let draftTracks = []
+  let selectedTrackId = null
 
   const button = document.createElement('button')
   const panel = document.createElement('section')
@@ -179,10 +233,16 @@ export const createActionSequencePanel = ({ app }) => {
   const emptyText = document.createElement('div')
   const nameInput = createTextInput()
   const loopInput = document.createElement('input')
+  const trackNameInput = createTextInput()
+  const trackLoopInput = document.createElement('input')
+  const trackList = document.createElement('div')
+  const emptyTrackText = document.createElement('div')
   const stepList = document.createElement('div')
   const emptyStepText = document.createElement('div')
   const addButton = document.createElement('button')
   const importButton = document.createElement('button')
+  const addTrackButton = document.createElement('button')
+  const deleteTrackButton = document.createElement('button')
   const addStepButton = document.createElement('button')
   const exportButton = document.createElement('button')
   const saveButton = document.createElement('button')
@@ -205,10 +265,23 @@ export const createActionSequencePanel = ({ app }) => {
       ? getSequenceOptions()
       : type === 'delay'
         ? []
-        : getActionOptions()
+        : type === 'position'
+          ? POSITION_AXIS_OPTIONS
+          : getActionOptions()
   )
 
   const getSelectedSequence = () => sequences.find((sequence) => sequence.id === selectedId) ?? null
+  const getSelectedTrack = () => draftTracks.find((track) => track.id === selectedTrackId) ?? null
+
+  const updateSelectedTrack = (patch) => {
+    draftTracks = draftTracks.map((track) => (
+      track.id === selectedTrackId ? { ...track, ...patch } : track
+    ))
+  }
+
+  const setSelectedTrackSteps = (steps) => {
+    updateSelectedTrack({ steps })
+  }
 
   const persistPanelState = () => {
     writePanelState({ visible, selectedId })
@@ -224,14 +297,16 @@ export const createActionSequencePanel = ({ app }) => {
   const handleDetailClose = () => {
     const sequence = getSelectedSequence()
 
-    if (sequence && draftSteps.length === 0) {
+    if (sequence && draftTracks.length === 0) {
       sequences = sequences.filter((item) => item.id !== sequence.id)
       selectedId = null
+      selectedTrackId = null
       persistAndRender()
       return
     }
 
     selectedId = null
+    selectedTrackId = null
     persistPanelState()
     renderList()
     syncForm()
@@ -348,6 +423,18 @@ export const createActionSequencePanel = ({ app }) => {
   })
   loopField.append(loopInput, document.createTextNode('循环播放'))
 
+  trackLoopInput.type = 'checkbox'
+  trackLoopInput.style.margin = '0'
+  const trackLoopField = document.createElement('label')
+  Object.assign(trackLoopField.style, {
+    display: 'flex',
+    gap: '8px',
+    alignItems: 'center',
+    fontSize: '13px',
+    color: 'rgba(238, 245, 238, 0.72)',
+  })
+  trackLoopField.append(trackLoopInput, document.createTextNode('轨道循环'))
+
   const form = document.createElement('div')
   Object.assign(form.style, {
     display: 'grid',
@@ -356,6 +443,45 @@ export const createActionSequencePanel = ({ app }) => {
   form.append(
     createField({ label: '序列名称', input: nameInput }),
     loopField,
+  )
+
+  const trackTitle = document.createElement('div')
+  trackTitle.textContent = '播放轨道'
+  Object.assign(trackTitle.style, {
+    marginTop: '12px',
+    marginBottom: '8px',
+    fontSize: '14px',
+    fontWeight: '600',
+  })
+
+  Object.assign(trackList.style, {
+    display: 'grid',
+    gap: '6px',
+    maxHeight: '120px',
+    overflowY: 'auto',
+  })
+
+  emptyTrackText.textContent = '暂无播放轨道'
+  Object.assign(emptyTrackText.style, {
+    display: 'none',
+    padding: '10px',
+    border: '1px dashed rgba(238, 245, 238, 0.2)',
+    borderRadius: '6px',
+    color: 'rgba(238, 245, 238, 0.62)',
+    textAlign: 'center',
+  })
+
+  const trackForm = document.createElement('div')
+  Object.assign(trackForm.style, {
+    display: 'grid',
+    gridTemplateColumns: '1fr auto',
+    gap: '10px',
+    alignItems: 'end',
+    marginTop: '8px',
+  })
+  trackForm.append(
+    createField({ label: '轨道名称', input: trackNameInput }),
+    trackLoopField,
   )
 
   const stepTitle = document.createElement('div')
@@ -368,7 +494,7 @@ export const createActionSequencePanel = ({ app }) => {
   })
 
   const stepHeader = document.createElement('div')
-  stepHeader.replaceChildren(...['类型', '目标', '时长', '重复', '排序', ''].map((label) => {
+  stepHeader.replaceChildren(...['类型', '目标', '时长', '重复/距离', '排序', ''].map((label) => {
     const item = document.createElement('span')
     item.textContent = label
     Object.assign(item.style, {
@@ -403,18 +529,24 @@ export const createActionSequencePanel = ({ app }) => {
 
   addButton.type = 'button'
   importButton.type = 'button'
+  addTrackButton.type = 'button'
+  deleteTrackButton.type = 'button'
   addStepButton.type = 'button'
   exportButton.type = 'button'
   saveButton.type = 'button'
   deleteButton.type = 'button'
   addButton.textContent = '新增'
   importButton.textContent = '导入'
+  addTrackButton.textContent = '新增轨道'
+  deleteTrackButton.textContent = '删除轨道'
   addStepButton.textContent = '新增步骤'
   exportButton.textContent = '导出'
   saveButton.textContent = '保存'
   deleteButton.textContent = '删除'
   applyButtonStyle(addButton)
   applyButtonStyle(importButton)
+  applyButtonStyle(addTrackButton)
+  applyButtonStyle(deleteTrackButton, 'danger')
   applyButtonStyle(addStepButton)
   applyButtonStyle(exportButton)
   applyButtonStyle(saveButton)
@@ -431,6 +563,13 @@ export const createActionSequencePanel = ({ app }) => {
     width: '100%',
     borderStyle: 'dashed',
   })
+  Object.assign(addTrackButton.style, {
+    flex: '1',
+    borderStyle: 'dashed',
+  })
+  Object.assign(deleteTrackButton.style, {
+    flex: '1',
+  })
 
   const addBar = document.createElement('div')
   Object.assign(addBar.style, {
@@ -440,6 +579,15 @@ export const createActionSequencePanel = ({ app }) => {
     marginTop: '12px',
   })
   addBar.append(addButton, importButton)
+
+  const trackBar = document.createElement('div')
+  Object.assign(trackBar.style, {
+    display: 'flex',
+    gap: '8px',
+    width: '100%',
+    marginTop: '8px',
+  })
+  trackBar.append(addTrackButton, deleteTrackButton)
 
   const stepBar = document.createElement('div')
   Object.assign(stepBar.style, {
@@ -465,17 +613,71 @@ export const createActionSequencePanel = ({ app }) => {
   actionsBar.append(deleteButton, saveGroup)
 
   panel.append(createCloseButton(handleToggle), title, list, emptyText, addBar)
-  detailPanel.append(createCloseButton(handleDetailClose), detailTitle, form, stepTitle, stepHeader, stepList, emptyStepText, stepBar, actionsBar)
+  detailPanel.append(
+    createCloseButton(handleDetailClose),
+    detailTitle,
+    form,
+    trackTitle,
+    trackList,
+    emptyTrackText,
+    trackBar,
+    trackForm,
+    stepTitle,
+    stepHeader,
+    stepList,
+    emptyStepText,
+    stepBar,
+    actionsBar,
+  )
   app.append(button, panel, detailPanel)
 
   const stopPointerLock = (event) => {
     event.stopPropagation()
   }
 
+  const renderTrackList = () => {
+    trackList.replaceChildren()
+    emptyTrackText.style.display = draftTracks.length === 0 ? 'block' : 'none'
+    deleteTrackButton.disabled = draftTracks.length <= 1
+
+    draftTracks.forEach((track, index) => {
+      const item = document.createElement('button')
+      item.type = 'button'
+      item.textContent = track.label || `轨道 ${index + 1}`
+      applyButtonStyle(item)
+      Object.assign(item.style, {
+        width: '100%',
+        textAlign: 'left',
+        background: track.id === selectedTrackId ? 'rgba(83, 127, 214, 0.42)' : 'rgba(238, 245, 238, 0.08)',
+      })
+      item.addEventListener('click', () => {
+        selectedTrackId = track.id
+        renderTrackList()
+        syncTrackForm()
+        renderStepList()
+      })
+      trackList.append(item)
+    })
+  }
+
+  const syncTrackForm = () => {
+    const track = getSelectedTrack()
+    const disabled = !track
+
+    trackNameInput.disabled = disabled
+    trackLoopInput.disabled = disabled
+    addStepButton.disabled = disabled
+    deleteTrackButton.disabled = disabled || draftTracks.length <= 1
+    trackNameInput.value = track?.label ?? ''
+    trackLoopInput.checked = track?.loop === true
+  }
+
   const renderStepList = () => {
     const actionOptions = getActionOptions()
     const sequenceOptions = getSequenceOptions()
-    const canAddStep = true
+    const track = getSelectedTrack()
+    const draftSteps = track?.steps ?? []
+    const canAddStep = !!track
 
     stepList.replaceChildren()
     emptyStepText.style.display = draftSteps.length === 0 ? 'block' : 'none'
@@ -486,6 +688,7 @@ export const createActionSequencePanel = ({ app }) => {
       const typeSelect = createSelectInput([
         { value: 'action', label: '动作' },
         { value: 'sequence', label: '序列' },
+        { value: 'position', label: '位移' },
         { value: 'delay', label: '延迟' },
       ])
       const targetOptions = getTargetOptions(step.type)
@@ -497,7 +700,13 @@ export const createActionSequencePanel = ({ app }) => {
       const moveDownButton = document.createElement('button')
       const removeButton = document.createElement('button')
 
-      typeSelect.value = step.type === 'sequence' ? 'sequence' : step.type === 'delay' ? 'delay' : 'action'
+      typeSelect.value = step.type === 'sequence'
+        ? 'sequence'
+        : step.type === 'position'
+          ? 'position'
+          : step.type === 'delay'
+            ? 'delay'
+            : 'action'
       targetSelect.value = targetOptions.some((option) => option.value === step.targetId)
         ? step.targetId
         : targetOptions[0]?.value ?? ''
@@ -505,15 +714,19 @@ export const createActionSequencePanel = ({ app }) => {
       durationInput.type = 'number'
       durationInput.min = '0'
       durationInput.step = '0.1'
-      durationInput.value = step.type === 'action' || step.type === 'delay'
+      durationInput.value = step.type === 'action' || step.type === 'delay' || step.type === 'position'
         ? String(step.duration ?? DEFAULT_ACTION_STEP_DURATION)
         : ''
       durationInput.disabled = step.type === 'sequence'
       repeatInput.type = 'number'
-      repeatInput.min = '1'
-      repeatInput.step = '1'
-      repeatInput.value = step.type === 'sequence' ? String(step.repeat) : ''
-      repeatInput.disabled = step.type !== 'sequence'
+      repeatInput.min = step.type === 'position' ? '-99' : '1'
+      repeatInput.step = step.type === 'position' ? '0.1' : '1'
+      repeatInput.value = step.type === 'sequence'
+        ? String(step.repeat)
+        : step.type === 'position'
+          ? String(step.amount ?? 0)
+          : ''
+      repeatInput.disabled = step.type !== 'sequence' && step.type !== 'position'
       moveUpButton.type = 'button'
       moveDownButton.type = 'button'
       moveUpButton.textContent = '上移'
@@ -546,45 +759,63 @@ export const createActionSequencePanel = ({ app }) => {
       typeSelect.addEventListener('change', () => {
         const type = typeSelect.value === 'sequence'
           ? 'sequence'
-          : typeSelect.value === 'delay'
-            ? 'delay'
-            : 'action'
+          : typeSelect.value === 'position'
+            ? 'position'
+            : typeSelect.value === 'delay'
+              ? 'delay'
+              : 'action'
         const options = getTargetOptions(type)
 
-        draftSteps = draftSteps.map((item) => (
+        const nextSteps = draftSteps.map((item) => (
           item.id === step.id
             ? {
               ...item,
               type,
               targetId: options[0]?.value ?? '',
+              axis: type === 'position' ? options[0]?.value ?? 'y' : undefined,
+              amount: type === 'position' ? 0 : undefined,
               repeat: 1,
               duration: type === 'sequence' ? 0 : DEFAULT_ACTION_STEP_DURATION,
             }
             : item
         ))
+        setSelectedTrackSteps(nextSteps)
         renderStepList()
       })
       targetSelect.addEventListener('change', () => {
-        draftSteps = draftSteps.map((item) => (
-          item.id === step.id ? { ...item, targetId: targetSelect.value } : item
+        const nextSteps = draftSteps.map((item) => (
+          item.id === step.id
+            ? {
+              ...item,
+              targetId: targetSelect.value,
+              axis: item.type === 'position' ? targetSelect.value : item.axis,
+            }
+            : item
         ))
+        setSelectedTrackSteps(nextSteps)
       })
       durationInput.addEventListener('input', () => {
-        draftSteps = draftSteps.map((item) => (
+        const nextSteps = draftSteps.map((item) => (
           item.id === step.id ? { ...item, duration: Number(durationInput.value) } : item
         ))
+        setSelectedTrackSteps(nextSteps)
       })
       repeatInput.addEventListener('input', () => {
-        draftSteps = draftSteps.map((item) => (
-          item.id === step.id ? { ...item, repeat: Number(repeatInput.value) } : item
+        const nextSteps = draftSteps.map((item) => (
+          item.id === step.id
+            ? item.type === 'position'
+              ? { ...item, amount: Number(repeatInput.value) }
+              : { ...item, repeat: Number(repeatInput.value) }
+            : item
         ))
+        setSelectedTrackSteps(nextSteps)
       })
       moveUpButton.addEventListener('click', () => {
         if (index === 0) return
 
         const nextSteps = [...draftSteps]
         ;[nextSteps[index - 1], nextSteps[index]] = [nextSteps[index], nextSteps[index - 1]]
-        draftSteps = nextSteps
+        setSelectedTrackSteps(nextSteps)
         renderStepList()
       })
       moveDownButton.addEventListener('click', () => {
@@ -592,11 +823,11 @@ export const createActionSequencePanel = ({ app }) => {
 
         const nextSteps = [...draftSteps]
         ;[nextSteps[index], nextSteps[index + 1]] = [nextSteps[index + 1], nextSteps[index]]
-        draftSteps = nextSteps
+        setSelectedTrackSteps(nextSteps)
         renderStepList()
       })
       removeButton.addEventListener('click', () => {
-        draftSteps = draftSteps.filter((item) => item.id !== step.id)
+        setSelectedTrackSteps(draftSteps.filter((item) => item.id !== step.id))
         renderStepList()
       })
 
@@ -619,9 +850,17 @@ export const createActionSequencePanel = ({ app }) => {
     deleteButton.disabled = disabled
     nameInput.value = sequence?.label ?? ''
     loopInput.checked = sequence?.loop === true
-    draftSteps = Array.isArray(sequence?.steps)
-      ? sequence.steps.map((step) => ({ ...step }))
+    draftTracks = Array.isArray(sequence?.tracks)
+      ? sequence.tracks.map((track) => ({
+        ...track,
+        steps: Array.isArray(track.steps) ? track.steps.map((step) => ({ ...step })) : [],
+      }))
       : []
+    selectedTrackId = draftTracks.some((track) => track.id === selectedTrackId)
+      ? selectedTrackId
+      : draftTracks[0]?.id ?? null
+    renderTrackList()
+    syncTrackForm()
     renderStepList()
   }
 
@@ -662,9 +901,9 @@ export const createActionSequencePanel = ({ app }) => {
 
   const handleAdd = () => {
     const actionId = getActionOptions()[0]?.value
-    const nextSequence = {
+    const track = {
       id: createId(),
-      label: `新序列 ${sequences.length + 1}`,
+      label: '主轨道',
       loop: false,
       steps: actionId
         ? [{
@@ -676,19 +915,55 @@ export const createActionSequencePanel = ({ app }) => {
         }]
         : [],
     }
+    const nextSequence = {
+      id: createId(),
+      label: `新序列 ${sequences.length + 1}`,
+      loop: false,
+      steps: track.steps,
+      tracks: [track],
+    }
 
     sequences = [...sequences, nextSequence]
     selectedId = nextSequence.id
+    selectedTrackId = track.id
     persistAndRender()
+  }
+
+  const handleAddTrack = () => {
+    const nextTrack = {
+      id: createId(),
+      label: `轨道 ${draftTracks.length + 1}`,
+      loop: loopInput.checked,
+      steps: [],
+    }
+
+    draftTracks = [...draftTracks, nextTrack]
+    selectedTrackId = nextTrack.id
+    renderTrackList()
+    syncTrackForm()
+    renderStepList()
+  }
+
+  const handleDeleteTrack = () => {
+    if (draftTracks.length <= 1 || !selectedTrackId) return
+
+    const index = draftTracks.findIndex((track) => track.id === selectedTrackId)
+    draftTracks = draftTracks.filter((track) => track.id !== selectedTrackId)
+    selectedTrackId = draftTracks[Math.max(0, index - 1)]?.id ?? draftTracks[0]?.id ?? null
+    renderTrackList()
+    syncTrackForm()
+    renderStepList()
   }
 
   const handleAddStep = () => {
     const actionId = getActionOptions()[0]?.value
     const sequenceId = getSequenceOptions()[0]?.value
     const type = actionId ? 'action' : sequenceId ? 'sequence' : 'delay'
+    const track = getSelectedTrack()
+    if (!track) return
 
-    draftSteps = [
-      ...draftSteps,
+    setSelectedTrackSteps([
+      ...track.steps,
       {
         id: createId(),
         type,
@@ -696,7 +971,7 @@ export const createActionSequencePanel = ({ app }) => {
         repeat: 1,
         duration: type === 'sequence' ? 0 : DEFAULT_ACTION_STEP_DURATION,
       },
-    ]
+    ])
     renderStepList()
   }
 
@@ -708,7 +983,7 @@ export const createActionSequencePanel = ({ app }) => {
     if (!label) return null
     const actionIds = new Set(getActionOptions().map((option) => option.value))
     const sequenceIds = new Set(getSequenceOptions().map((option) => option.value))
-    const steps = draftSteps.filter((step) => (
+    const normalizeDraftSteps = (steps) => steps.filter((step) => (
       (
         step.type === 'action'
         && actionIds.has(step.targetId)
@@ -726,15 +1001,45 @@ export const createActionSequencePanel = ({ app }) => {
         && Number.isFinite(step.duration)
         && step.duration >= 0
       )
+      || (
+        step.type === 'position'
+        && ['x', 'y', 'z'].includes(step.axis ?? step.targetId)
+        && Number.isFinite(step.amount)
+        && Number.isFinite(step.duration)
+        && step.duration >= 0
+      )
     )).map((step) => ({
       id: step.id,
-      type: step.type === 'sequence' ? 'sequence' : step.type === 'delay' ? 'delay' : 'action',
-      targetId: step.targetId,
+      type: step.type === 'sequence'
+        ? 'sequence'
+        : step.type === 'delay'
+          ? 'delay'
+          : step.type === 'position'
+            ? 'position'
+            : 'action',
+      targetId: step.type === 'position' ? step.axis ?? step.targetId : step.targetId,
+      axis: step.type === 'position' ? step.axis ?? step.targetId : undefined,
+      amount: step.type === 'position' ? step.amount : undefined,
       repeat: step.type === 'sequence' ? Math.floor(step.repeat) : 1,
       duration: step.type === 'sequence' ? 0 : step.duration,
     }))
+    const tracks = draftTracks.map((track, index) => ({
+      id: track.id,
+      label: typeof track.label === 'string' && track.label.trim()
+        ? track.label.trim()
+        : `轨道 ${index + 1}`,
+      loop: track.loop === true,
+      steps: normalizeDraftSteps(track.steps),
+    })).filter((track, index) => index === 0 || track.steps.length > 0)
+    if (tracks.length === 0) return null
 
-    return { ...sequence, label, loop: loopInput.checked, steps }
+    return {
+      ...sequence,
+      label,
+      loop: loopInput.checked,
+      steps: tracks[0].steps,
+      tracks,
+    }
   }
 
   const handleSave = () => {
@@ -752,11 +1057,16 @@ export const createActionSequencePanel = ({ app }) => {
     const collectedSequences = []
     const actionIds = new Set()
     const sequencesById = new Map(sequences.map((sequence) => [sequence.id, sequence]))
+    const getSequenceSteps = (sequence) => (
+      Array.isArray(sequence.tracks) && sequence.tracks.length > 0
+        ? sequence.tracks.flatMap((track) => track.steps || [])
+        : sequence.steps || []
+    )
     const visitSequence = (sequence) => {
       if (!sequence || collectedSequences.some((item) => item.id === sequence.id)) return
 
       collectedSequences.push(sequence)
-      sequence.steps.forEach((step) => {
+      getSequenceSteps(sequence).forEach((step) => {
         if (step.type === 'action') {
           actionIds.add(step.targetId)
           return
@@ -957,15 +1267,38 @@ export const createActionSequencePanel = ({ app }) => {
         }))
 
         // 2. 处理序列
-        const importedSequences = (data.sequences || []).map(seq => ({
-          ...seq,
-          id: generateNewId(seq.id),
-          steps: (seq.steps || []).map(step => ({
+        const remapStep = (step) => ({
             ...step,
             id: `action-sequence-step-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
-            targetId: step.type === 'delay' ? '' : generateNewId(step.targetId)
-          }))
-        }))
+            targetId: step.type === 'delay'
+              ? ''
+              : step.type === 'position'
+                ? step.targetId
+                : generateNewId(step.targetId)
+        })
+        const importedSequences = (data.sequences || []).map(seq => {
+          const tracks = Array.isArray(seq.tracks) && seq.tracks.length > 0
+            ? seq.tracks.map((track, index) => ({
+              ...track,
+              id: generateNewId(track.id),
+              label: track.label || `轨道 ${index + 1}`,
+              loop: track.loop === true,
+              steps: (track.steps || []).map(remapStep),
+            }))
+            : [{
+              id: generateNewId(`${seq.id}-track-main`),
+              label: '主轨道',
+              loop: seq.loop === true,
+              steps: (seq.steps || []).map(remapStep),
+            }]
+
+          return {
+            ...seq,
+            id: generateNewId(seq.id),
+            steps: tracks[0]?.steps ?? [],
+            tracks,
+          }
+        })
 
         // 保存动作
         window.localStorage.setItem('qixing-town:user-actions', JSON.stringify(serializeActions([...currentActions, ...importedActions])))
@@ -1022,9 +1355,22 @@ export const createActionSequencePanel = ({ app }) => {
     if (visible && getSelectedSequence()) renderStepList()
   }
 
+  const handleTrackNameInput = () => {
+    updateSelectedTrack({ label: trackNameInput.value })
+    renderTrackList()
+  }
+
+  const handleTrackLoopChange = () => {
+    updateSelectedTrack({ loop: trackLoopInput.checked })
+  }
+
+  trackNameInput.addEventListener('input', handleTrackNameInput)
+  trackLoopInput.addEventListener('change', handleTrackLoopChange)
   button.addEventListener('click', handleToggle)
   addButton.addEventListener('click', handleAdd)
   importButton.addEventListener('click', showImportModal)
+  addTrackButton.addEventListener('click', handleAddTrack)
+  deleteTrackButton.addEventListener('click', handleDeleteTrack)
   addStepButton.addEventListener('click', handleAddStep)
   exportButton.addEventListener('click', handleExport)
   saveButton.addEventListener('click', handleSave)
@@ -1056,10 +1402,14 @@ export const createActionSequencePanel = ({ app }) => {
       button.removeEventListener('click', handleToggle)
       addButton.removeEventListener('click', handleAdd)
       importButton.removeEventListener('click', showImportModal)
+      addTrackButton.removeEventListener('click', handleAddTrack)
+      deleteTrackButton.removeEventListener('click', handleDeleteTrack)
       addStepButton.removeEventListener('click', handleAddStep)
       exportButton.removeEventListener('click', handleExport)
       saveButton.removeEventListener('click', handleSave)
       deleteButton.removeEventListener('click', handleDelete)
+      trackNameInput.removeEventListener('input', handleTrackNameInput)
+      trackLoopInput.removeEventListener('change', handleTrackLoopChange)
       app.removeEventListener('qixing-town:user-actions-changed', handleUserActionsChanged)
       ;[button, panel, detailPanel].forEach((element) => {
         element.removeEventListener('pointerdown', stopPointerLock)

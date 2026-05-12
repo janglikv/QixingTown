@@ -7,7 +7,6 @@ import {
   createRigFigure,
   createRigJointPositions,
 } from '../lib/rigkit/index.js'
-import { CAMERA_HEIGHT } from '../config.js'
 
 /**
  * 角色比例配置

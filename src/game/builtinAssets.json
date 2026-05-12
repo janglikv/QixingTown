@@ -1,0 +1,157 @@
+{
+  "type": "qixing-town:action-sequence-export",
+  "version": 1,
+  "rootSequenceId": "action-sequence-mp2h6ntd-lx10c",
+  "sequences": [
+    {
+      "id": "action-sequence-mp2h6ntd-lx10c",
+      "label": "奔跑",
+      "loop": true,
+      "steps": [
+        {
+          "id": "action-sequence-step-mp2h6ntd-nhib9",
+          "type": "action",
+          "targetId": "action-mp2h6ntd-g5fzl",
+          "repeat": 1,
+          "duration": 0.2
+        },
+        {
+          "id": "action-sequence-step-mp2h6ntd-6zmvt",
+          "type": "action",
+          "targetId": "action-mp2h6ntd-euoyd",
+          "repeat": 1,
+          "duration": 0.2
+        }
+      ]
+    }
+  ],
+  "actions": [
+    {
+      "id": "action-mp2h6ntd-g5fzl",
+      "label": "跑1",
+      "controls": [
+        {
+          "id": "action-mp2h6ntd-tztvh",
+          "bone": "kneeLeft",
+          "direction": "backward",
+          "angle": 63
+        },
+        {
+          "id": "action-mp2h6ntd-2h6ns",
+          "bone": "hipLeft",
+          "direction": "forward",
+          "angle": 94
+        },
+        {
+          "id": "action-mp2h6ntd-yc1ob",
+          "bone": "hipRight",
+          "direction": "backward",
+          "angle": 31
+        },
+        {
+          "id": "action-mp2h6ntd-5b0b2",
+          "bone": "kneeRight",
+          "direction": "backward",
+          "angle": 59
+        },
+        {
+          "id": "action-mp2h6ntd-h78a1",
+          "bone": "hip",
+          "direction": "forward",
+          "angle": -30
+        },
+        {
+          "id": "action-mp2h6ntd-bhmq4",
+          "bone": "shoulderRight",
+          "direction": "forward",
+          "angle": 80
+        },
+        {
+          "id": "action-mp2h6ntd-ysdtu",
+          "bone": "elbowRight",
+          "direction": "forward",
+          "angle": 90
+        },
+        {
+          "id": "action-mp2h6ntd-eqvbu",
+          "bone": "shoulderLeft",
+          "direction": "backward",
+          "angle": 80
+        },
+        {
+          "id": "action-mp2h6ntd-vmx14",
+          "bone": "elbowLeft",
+          "direction": "forward",
+          "angle": 63
+        }
+      ],
+      "type": "fk",
+      "ikTargets": [],
+      "sourceId": null
+    },
+    {
+      "id": "action-mp2h6ntd-euoyd",
+      "label": "跑1 (镜像)",
+      "sourceId": null,
+      "isMirrored": true,
+      "type": "fk",
+      "controls": [
+        {
+          "id": "action-mp2h6ntd-359i9",
+          "bone": "kneeRight",
+          "direction": "forward",
+          "angle": -57
+        },
+        {
+          "id": "action-mp2h6ntd-g5ygj",
+          "bone": "hipRight",
+          "direction": "forward",
+          "angle": 60
+        },
+        {
+          "id": "action-mp2h6ntd-kc3op",
+          "bone": "hipLeft",
+          "direction": "backward",
+          "angle": 20
+        },
+        {
+          "id": "action-mp2h6ntd-wzw0l",
+          "bone": "hip",
+          "direction": "forward",
+          "angle": -26
+        },
+        {
+          "id": "action-mp2h6ntd-s8lk9",
+          "bone": "kneeLeft",
+          "direction": "backward",
+          "angle": 60
+        },
+        {
+          "id": "action-mp2h6ntd-l1jj6",
+          "bone": "shoulderLeft",
+          "direction": "forward",
+          "angle": 80
+        },
+        {
+          "id": "action-mp2h6ntd-z1o4g",
+          "bone": "elbowLeft",
+          "direction": "forward",
+          "angle": 90
+        },
+        {
+          "id": "action-mp2h6ntd-uweis",
+          "bone": "shoulderRight",
+          "direction": "backward",
+          "angle": 80
+        },
+        {
+          "id": "action-mp2h6ntd-gph64",
+          "bone": "elbowRight",
+          "direction": "forward",
+          "angle": 63
+        }
+      ],
+      "ikTargets": []
+    }
+  ]
+}
