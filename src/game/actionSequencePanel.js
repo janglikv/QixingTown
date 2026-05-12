@@ -1,4 +1,4 @@
-import { readUserActions } from './actionSettingsPanel.js'
+import { readUserActions, serializeActions } from './actionSettingsPanel.js'
 
 const ACTION_SEQUENCES_STORAGE_KEY = 'qixing-town:action-sequences'
 const PANEL_STATE_STORAGE_KEY = 'qixing-town:action-sequence-panel'
@@ -182,6 +182,7 @@ export const createActionSequencePanel = ({ app }) => {
   const stepList = document.createElement('div')
   const emptyStepText = document.createElement('div')
   const addButton = document.createElement('button')
+  const importButton = document.createElement('button')
   const addStepButton = document.createElement('button')
   const exportButton = document.createElement('button')
   const saveButton = document.createElement('button')
@@ -401,22 +402,29 @@ export const createActionSequencePanel = ({ app }) => {
   })
 
   addButton.type = 'button'
+  importButton.type = 'button'
   addStepButton.type = 'button'
   exportButton.type = 'button'
   saveButton.type = 'button'
   deleteButton.type = 'button'
   addButton.textContent = '新增'
+  importButton.textContent = '导入'
   addStepButton.textContent = '新增步骤'
   exportButton.textContent = '导出'
   saveButton.textContent = '保存'
   deleteButton.textContent = '删除'
   applyButtonStyle(addButton)
+  applyButtonStyle(importButton)
   applyButtonStyle(addStepButton)
   applyButtonStyle(exportButton)
   applyButtonStyle(saveButton)
   applyButtonStyle(deleteButton, 'danger')
   Object.assign(addButton.style, {
-    width: '100%',
+    flex: '1',
+    borderStyle: 'dashed',
+  })
+  Object.assign(importButton.style, {
+    flex: '1',
     borderStyle: 'dashed',
   })
   Object.assign(addStepButton.style, {
@@ -427,10 +435,11 @@ export const createActionSequencePanel = ({ app }) => {
   const addBar = document.createElement('div')
   Object.assign(addBar.style, {
     display: 'flex',
+    gap: '8px',
     width: '100%',
     marginTop: '12px',
   })
-  addBar.append(addButton)
+  addBar.append(addButton, importButton)
 
   const stepBar = document.createElement('div')
   Object.assign(stepBar.style, {
@@ -853,6 +862,140 @@ export const createActionSequencePanel = ({ app }) => {
     textarea.select()
   }
 
+  const showImportModal = () => {
+    const overlay = document.createElement('div')
+    Object.assign(overlay.style, {
+      position: 'fixed',
+      left: '0',
+      top: '0',
+      width: '100%',
+      height: '100%',
+      background: 'rgba(0, 0, 0, 0.72)',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      zIndex: '1000',
+    })
+
+    const modal = document.createElement('div')
+    Object.assign(modal.style, {
+      width: '80%',
+      height: '80%',
+      background: '#07111f',
+      border: '1px solid rgba(238, 245, 238, 0.24)',
+      borderRadius: '8px',
+      padding: '16px',
+      display: 'flex',
+      flexDirection: 'column',
+      gap: '12px',
+    })
+
+    const header = document.createElement('div')
+    header.textContent = '动作序列导入'
+    Object.assign(header.style, {
+      fontSize: '16px',
+      fontWeight: '600',
+      color: '#eef5ee',
+    })
+
+    const textarea = document.createElement('textarea')
+    textarea.placeholder = '请在此粘贴导出的动作序列 JSON 数据...'
+    Object.assign(textarea.style, {
+      flex: '1',
+      background: 'rgba(7, 17, 31, 0.88)',
+      color: '#eef5ee',
+      border: '1px solid rgba(238, 245, 238, 0.24)',
+      borderRadius: '4px',
+      padding: '12px',
+      fontFamily: 'monospace',
+      fontSize: '13px',
+      resize: 'none',
+    })
+
+    const footer = document.createElement('div')
+    Object.assign(footer.style, {
+      display: 'flex',
+      justifyContent: 'flex-end',
+      gap: '8px',
+    })
+
+    const importBtn = document.createElement('button')
+    importBtn.textContent = '导入'
+    applyButtonStyle(importBtn)
+
+    const closeBtn = document.createElement('button')
+    closeBtn.textContent = '取消'
+    applyButtonStyle(closeBtn)
+    closeBtn.addEventListener('click', () => {
+      overlay.remove()
+    })
+
+    importBtn.addEventListener('click', () => {
+      try {
+        const data = JSON.parse(textarea.value)
+        if (data.type !== 'qixing-town:action-sequence-export') {
+          throw new Error('无效的导入数据格式')
+        }
+
+        const idMap = new Map()
+        const generateNewId = (oldId) => {
+          if (!oldId) return ''
+          if (idMap.has(oldId)) return idMap.get(oldId)
+          const newId = (oldId.startsWith('action-sequence-') ? 'action-sequence-' : 'action-') + 
+                        Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 7)
+          idMap.set(oldId, newId)
+          return newId
+        }
+
+        // 1. 处理动作
+        const currentActions = readUserActions()
+        const importedActions = (data.actions || []).map(action => ({
+          ...action,
+          id: generateNewId(action.id),
+          sourceId: action.sourceId ? generateNewId(action.sourceId) : null,
+          controls: (action.controls || []).map(c => ({ ...c, id: `action-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}` }))
+        }))
+
+        // 2. 处理序列
+        const importedSequences = (data.sequences || []).map(seq => ({
+          ...seq,
+          id: generateNewId(seq.id),
+          steps: (seq.steps || []).map(step => ({
+            ...step,
+            id: `action-sequence-step-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
+            targetId: step.type === 'delay' ? '' : generateNewId(step.targetId)
+          }))
+        }))
+
+        // 保存动作
+        window.localStorage.setItem('qixing-town:user-actions', JSON.stringify(serializeActions([...currentActions, ...importedActions])))
+        app.dispatchEvent(new CustomEvent('qixing-town:user-actions-changed'))
+
+        // 保存序列
+        sequences = [...sequences, ...importedSequences]
+        writeSequences(sequences)
+        app.dispatchEvent(new CustomEvent('qixing-town:action-sequences-changed'))
+
+        // 如果有根节点，默认选中
+        if (data.rootSequenceId && idMap.has(data.rootSequenceId)) {
+          selectedId = idMap.get(data.rootSequenceId)
+        }
+
+        persistAndRender()
+        overlay.remove()
+        alert('导入成功！')
+      } catch (err) {
+        alert('导入失败：' + err.message)
+      }
+    })
+
+    footer.append(importBtn, closeBtn)
+    modal.append(header, textarea, footer)
+    overlay.append(modal)
+    document.body.append(overlay)
+    textarea.focus()
+  }
+
   const handleExport = () => {
     const sequence = createDraftSequence()
     if (!sequence) return
@@ -862,7 +1005,7 @@ export const createActionSequencePanel = ({ app }) => {
       version: 1,
       rootSequenceId: sequence.id,
       sequences: exportSequences,
-      actions,
+      actions: serializeActions(actions),
     }, null, 2)
 
     showJsonModal('动作序列导出 JSON', json)
@@ -881,6 +1024,7 @@ export const createActionSequencePanel = ({ app }) => {
 
   button.addEventListener('click', handleToggle)
   addButton.addEventListener('click', handleAdd)
+  importButton.addEventListener('click', showImportModal)
   addStepButton.addEventListener('click', handleAddStep)
   exportButton.addEventListener('click', handleExport)
   saveButton.addEventListener('click', handleSave)
@@ -911,6 +1055,7 @@ export const createActionSequencePanel = ({ app }) => {
     dispose: () => {
       button.removeEventListener('click', handleToggle)
       addButton.removeEventListener('click', handleAdd)
+      importButton.removeEventListener('click', showImportModal)
       addStepButton.removeEventListener('click', handleAddStep)
       exportButton.removeEventListener('click', handleExport)
       saveButton.removeEventListener('click', handleSave)

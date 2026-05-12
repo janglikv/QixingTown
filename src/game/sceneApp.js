@@ -18,47 +18,21 @@ const createRenderer = (app) => {
   return renderer
 }
 
-const CAMERA_STATE_STORAGE_KEY = 'qixing-town:camera-state'
-const CAMERA_STATE_SAVE_INTERVAL = 250
 const CONTROL_POINTS_VISIBLE_STORAGE_KEY = 'qixing-town:control-points-visible'
 const CONTROL_TARGET_STORAGE_KEY = 'qixing-town:control-target'
 const DEFAULT_ACTION_SEQUENCE_STEP_DURATION = 0.9
 
-const isFiniteNumberArray = (value, length) => (
-  Array.isArray(value)
-  && value.length === length
-  && value.every(Number.isFinite)
-)
-
-const readCameraState = () => {
-  try {
-    const state = JSON.parse(window.localStorage.getItem(CAMERA_STATE_STORAGE_KEY))
-
-    if (
-      !isFiniteNumberArray(state?.position, 3)
-      || !isFiniteNumberArray(state?.quaternion, 4)
-    ) {
-      return null
-    }
-
-    return state
-  } catch {
-    return null
-  }
-}
-
-const writeCameraState = (camera) => {
-  try {
-    window.localStorage.setItem(
-      CAMERA_STATE_STORAGE_KEY,
-      JSON.stringify({
-        position: camera.position.toArray(),
-        quaternion: camera.quaternion.toArray(),
-      }),
-    )
-  } catch {
-    // Storage can be unavailable in restricted browser modes.
-  }
+const applyButtonStyle = (button, variant = 'normal') => {
+  Object.assign(button.style, {
+    height: '30px',
+    padding: '0 10px',
+    border: '1px solid rgba(238, 245, 238, 0.24)',
+    borderRadius: '5px',
+    background: variant === 'danger' ? 'rgba(160, 38, 38, 0.82)' : 'rgba(238, 245, 238, 0.1)',
+    color: '#eef5ee',
+    font: 'inherit',
+    cursor: 'pointer',
+  })
 }
 
 const readControlPointsVisible = () => {
@@ -83,9 +57,9 @@ const readControlTarget = () => {
   try {
     const value = window.localStorage.getItem(CONTROL_TARGET_STORAGE_KEY)
 
-    return value === 'player' ? 'player' : 'camera'
+    return value === 'camera' ? 'camera' : 'player'
   } catch {
-    return 'camera'
+    return 'player'
   }
 }
 
@@ -189,23 +163,84 @@ const createControlTargetIndicator = ({ app, initialTarget }) => {
   }
 }
 
-const getCameraStateSignature = (camera) => (
-  [
-    ...camera.position.toArray(),
-    ...camera.quaternion.toArray(),
-  ].join('|')
-)
+const createResetButton = ({ app, label = '重置视角', onReset }) => {
+  const button = document.createElement('button')
+  button.textContent = label
+  applyButtonStyle(button)
+  Object.assign(button.style, {
+    position: 'absolute',
+    right: '14px',
+    top: '156px',
+    zIndex: '10',
+    display: 'none',
+    alignItems: 'center',
+    justifyContent: 'center',
+    lineHeight: '1',
+    whiteSpace: 'nowrap',
+    fontSize: '14px',
+    padding: '0px 12px',
+  })
+
+  const stopPointerLock = (event) => {
+    event.stopPropagation()
+  }
+
+  button.addEventListener('pointerdown', stopPointerLock)
+  button.addEventListener('click', onReset)
+  app.append(button)
+
+  return {
+    element: button,
+    syncCursorVisible: (visible) => {
+      button.style.display = visible ? 'inline-flex' : 'none'
+    },
+    dispose: () => {
+      button.removeEventListener('pointerdown', stopPointerLock)
+      button.removeEventListener('click', onReset)
+      button.remove()
+    },
+  }
+}
+
+const createCoordinatesIndicator = ({ app }) => {
+  const element = document.createElement('div')
+  Object.assign(element.style, {
+    position: 'absolute',
+    left: '14px',
+    bottom: '14px',
+    zIndex: '10',
+    display: 'none',
+    padding: '8px 12px',
+    borderRadius: '6px',
+    background: 'rgba(7, 17, 31, 0.72)',
+    color: '#eef5ee',
+    fontSize: '12px',
+    fontFamily: 'monospace',
+    whiteSpace: 'pre',
+    userSelect: 'none',
+    pointerEvents: 'none',
+    lineHeight: '1.6',
+    border: '1px solid rgba(238, 245, 238, 0.12)',
+  })
+
+  app.append(element)
+
+  return {
+    update: (cameraPos, playerPos) => {
+      element.textContent = `相机 X:${cameraPos.x.toFixed(2)} Y:${cameraPos.y.toFixed(2)} Z:${cameraPos.z.toFixed(2)}\n玩家 X:${playerPos.x.toFixed(2)} Y:${playerPos.y.toFixed(2)} Z:${playerPos.z.toFixed(2)}`
+    },
+    syncCursorVisible: (visible) => {
+      element.style.display = visible ? 'block' : 'none'
+    },
+    dispose: () => {
+      element.remove()
+    },
+  }
+}
 
 const createCamera = () => {
   const camera = new PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 500)
   camera.position.set(0, CAMERA_HEIGHT, 6)
-
-  const savedState = readCameraState()
-  if (savedState) {
-    camera.position.fromArray(savedState.position)
-    camera.quaternion.fromArray(savedState.quaternion)
-  }
-
   return camera
 }
 
@@ -225,7 +260,9 @@ export const createSceneApp = (app) => {
     setPlayerRunSequenceActive: (active) => {
       if (active) {
         const sequence = BUILTIN_SEQUENCES.find((s) => s.label === '奔跑')
-        if (sequence) startActionSequence(sequence)
+        if (sequence && actionSequenceState.sequenceId !== sequence.id) {
+          startActionSequence(sequence)
+        }
       } else {
         clearActionSequenceState()
         environment.cancelPlayerUserAction()
@@ -247,6 +284,24 @@ export const createSceneApp = (app) => {
     app,
     initialTarget: playerController.getControlTarget(),
   })
+  const coordinatesIndicator = createCoordinatesIndicator({ app })
+  const resetButton = createResetButton({
+    app,
+    label: '全部重置',
+    onReset: () => {
+      if (!confirm('确定要清空所有自定义动作、序列并重置视角吗？该操作不可撤销。')) return
+
+      // 清除所有以 qixing-town: 开头的存储项
+      Object.keys(window.localStorage).forEach((key) => {
+        if (key.startsWith('qixing-town:')) {
+          window.localStorage.removeItem(key)
+        }
+      })
+
+      // 重新加载页面以恢复初始状态
+      window.location.reload()
+    },
+  })
   const actionSettingsPanel = createActionSettingsPanel({
     app,
   })
@@ -266,10 +321,24 @@ export const createSceneApp = (app) => {
   }
 
   const createSequenceSteps = (sequence, visitedSequenceIds = new Set()) => {
-    const actionsById = new Map([
-      ...BUILTIN_ACTIONS.map((action) => [action.id, action]),
-      ...readUserActions().map((action) => [action.id, action]),
-    ])
+    const allActions = [
+      ...BUILTIN_ACTIONS,
+      ...readUserActions(),
+    ]
+    const actionsById = new Map(allActions.map((action) => {
+      if (action.isMirrored && action.sourceId && (!action.controls || action.controls.length === 0)) {
+        const source = allActions.find((a) => a.id === action.sourceId)
+        if (source) {
+          const controls = (source.controls || []).map((control) => ({
+            ...control,
+            bone: control.bone.endsWith('Left') ? control.bone.replace('Left', 'Right') : 
+                  control.bone.endsWith('Right') ? control.bone.replace('Right', 'Left') : control.bone
+          }))
+          return [action.id, { ...action, controls }]
+        }
+      }
+      return [action.id, action]
+    }))
     const sequencesById = new Map([
       ...BUILTIN_SEQUENCES.map((item) => [item.id, item]),
       ...readUserActionSequences().map((item) => [item.id, item]),
@@ -408,20 +477,6 @@ export const createSceneApp = (app) => {
   let actionWheel = createPlayerActionWheel()
   const timer = new Timer()
   timer.connect(document)
-  let lastCameraStateSignature = getCameraStateSignature(camera)
-  let lastCameraStateSavedAt = 0
-
-  const persistCameraState = () => {
-    const signature = getCameraStateSignature(camera)
-    if (signature === lastCameraStateSignature) return
-
-    writeCameraState(camera)
-    lastCameraStateSignature = signature
-  }
-
-  const persistCameraStateOnUnload = () => {
-    writeCameraState(camera)
-  }
 
   const onResize = () => {
     camera.aspect = window.innerWidth / window.innerHeight
@@ -499,7 +554,6 @@ export const createSceneApp = (app) => {
   }
 
   window.addEventListener('resize', onResize)
-  window.addEventListener('beforeunload', persistCameraStateOnUnload)
   window.addEventListener('keydown', onKeyDown)
   window.addEventListener('keyup', onKeyUp)
   app.addEventListener('qixing-town:play-action', onPlayUserAction)
@@ -516,17 +570,15 @@ export const createSceneApp = (app) => {
     const cursorVisible = !playerController.controls.isLocked
     controlPointToggle.syncCursorVisible(cursorVisible)
     controlTargetIndicator.syncCursorVisible(cursorVisible)
+    coordinatesIndicator.syncCursorVisible(cursorVisible)
+    coordinatesIndicator.update(camera.position, environment.player.position)
+    resetButton.syncCursorVisible(cursorVisible)
     actionSettingsPanel.syncCursorVisible(cursorVisible)
     actionSequencePanel.syncCursorVisible(cursorVisible)
     updateActionSequence(delta)
     environment.update(delta)
     actionWheel.update()
     environment.updateGroundPosition(camera.position)
-    const now = window.performance.now()
-    if (now - lastCameraStateSavedAt >= CAMERA_STATE_SAVE_INTERVAL) {
-      lastCameraStateSavedAt = now
-      persistCameraState()
-    }
     renderer.render(scene, camera)
 
     animationFrameId = window.requestAnimationFrame(renderFrame)
@@ -538,15 +590,15 @@ export const createSceneApp = (app) => {
   const dispose = () => {
     window.cancelAnimationFrame(animationFrameId)
     window.removeEventListener('resize', onResize)
-    window.removeEventListener('beforeunload', persistCameraStateOnUnload)
     window.removeEventListener('keydown', onKeyDown)
     window.removeEventListener('keyup', onKeyUp)
     app.removeEventListener('qixing-town:play-action', onPlayUserAction)
     app.removeEventListener('qixing-town:user-actions-changed', rebuildActionWheel)
     app.removeEventListener('qixing-town:action-sequences-changed', rebuildActionWheel)
-    persistCameraStateOnUnload()
     controlPointToggle.dispose()
     controlTargetIndicator.dispose()
+    coordinatesIndicator.dispose()
+    resetButton.dispose()
     actionSettingsPanel.dispose()
     actionSequencePanel.dispose()
     actionWheel.dispose()

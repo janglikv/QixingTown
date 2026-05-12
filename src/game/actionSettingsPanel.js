@@ -67,22 +67,24 @@ export const readUserActions = () => {
   }
 }
 
+export const serializeActions = (actions) => actions.map((action) => {
+  if (action.isMirrored && action.sourceId) {
+    return {
+      id: action.id,
+      label: action.label,
+      sourceId: action.sourceId,
+      isMirrored: true,
+      type: action.type,
+      controls: [],
+      ikTargets: [],
+    }
+  }
+  return action
+})
+
 const writeActions = (actions) => {
   try {
-    const serialized = actions.map((action) => {
-      if (action.isMirrored && action.sourceId) {
-        return {
-          id: action.id,
-          label: action.label,
-          sourceId: action.sourceId,
-          isMirrored: true,
-          type: action.type,
-          controls: [],
-          ikTargets: [],
-        }
-      }
-      return action
-    })
+    const serialized = serializeActions(actions)
     window.localStorage.setItem(ACTIONS_STORAGE_KEY, JSON.stringify(serialized))
   } catch {
     // Storage can be unavailable in restricted browser modes.
@@ -891,6 +893,15 @@ export const createActionSettingsPanel = ({ app }) => {
     persistAndRender()
   }
 
+  const handleUserActionsChanged = () => {
+    actions = readUserActions()
+    renderList()
+    if (selectedId && !actions.some((a) => a.id === selectedId)) {
+      selectedId = null
+      syncForm()
+    }
+  }
+
   button.addEventListener('click', handleToggle)
   nameInput.addEventListener('input', dispatchDraftPreview)
   addButton.addEventListener('click', handleAdd)
@@ -898,6 +909,7 @@ export const createActionSettingsPanel = ({ app }) => {
   saveButton.addEventListener('click', handleSave)
   deleteButton.addEventListener('click', handleDelete)
   window.addEventListener('resize', syncDetailPanelPosition)
+  app.addEventListener('qixing-town:user-actions-changed', handleUserActionsChanged)
     ;[button, panel, detailPanel].forEach((element) => {
       element.addEventListener('pointerdown', stopPointerLock)
     })
@@ -933,6 +945,7 @@ export const createActionSettingsPanel = ({ app }) => {
       saveButton.removeEventListener('click', handleSave)
       deleteButton.removeEventListener('click', handleDelete)
       window.removeEventListener('resize', syncDetailPanelPosition)
+      app.removeEventListener('qixing-town:user-actions-changed', handleUserActionsChanged)
         ;[button, panel, detailPanel].forEach((element) => {
           element.removeEventListener('pointerdown', stopPointerLock)
         })

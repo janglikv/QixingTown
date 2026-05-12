@@ -12,6 +12,7 @@ import {
   GROUND_SIZE,
   WORLD_COLORS,
   WORLD_TUNING,
+  CAMERA_HEIGHT,
 } from '../config.js'
 import { createGroundTexture } from './createGroundTexture.js'
 import { createPlayer, STICK_FIGURE_HEIGHT } from './createPlayer.js'
@@ -47,7 +48,7 @@ export const createEnvironment = (scene) => {
   const polaris = createPolaris()
   const player = createPlayer({
     name: 'player',
-    position: [10.7, STICK_FIGURE_HEIGHT / 2, -4],
+    position: [0, STICK_FIGURE_HEIGHT / 2, -4],
   })
   const trees = []
   const treeRowCount = 5

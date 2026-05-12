@@ -7,6 +7,7 @@ import {
   createRigFigure,
   createRigJointPositions,
 } from '../lib/rigkit/index.js'
+import { CAMERA_HEIGHT } from '../config.js'
 
 /**
  * 角色比例配置
@@ -217,7 +218,7 @@ export const createPlayerJointPositions = () => createRigJointPositions(PLAYER_M
 
 export const createPlayer = ({
   name = 'player',
-  position = [10.7, STICK_FIGURE_HEIGHT / 2, -4],
+  position = [0, STICK_FIGURE_HEIGHT / 2, -4],
 } = {}) => {
   const joints = createPlayerJointPositions()
   const { figure } = createRigFigure({

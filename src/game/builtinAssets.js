@@ -4,16 +4,16 @@ export const BUILTIN_ACTIONS = [
     "label": "跑1",
     "controls": [
       {
-        "id": "action-mp200oci-0rn96",
-        "bone": "hipLeft",
-        "direction": "forward",
-        "angle": 60
-      },
-      {
         "id": "action-mp1zy8vx-gvdr8",
         "bone": "kneeLeft",
         "direction": "forward",
         "angle": -57
+      },
+      {
+        "id": "action-mp200oci-0rn96",
+        "bone": "hipLeft",
+        "direction": "forward",
+        "angle": 60
       },
       {
         "id": "action-mp2019w8-8dhuf",
@@ -25,25 +25,37 @@ export const BUILTIN_ACTIONS = [
         "id": "action-mp231qkh-smvb5",
         "bone": "hip",
         "direction": "forward",
-        "angle": -24
+        "angle": -26
+      },
+      {
+        "id": "action-mp2cetox-yqbs5",
+        "bone": "kneeRight",
+        "direction": "backward",
+        "angle": 60
       },
       {
         "id": "action-mp2340sm-5rdgk",
         "bone": "shoulderRight",
         "direction": "forward",
-        "angle": 84
+        "angle": 80
       },
       {
         "id": "action-mp2352iq-rhqxi",
         "bone": "elbowRight",
-        "direction": "up",
-        "angle": -94
+        "direction": "forward",
+        "angle": 90
       },
       {
         "id": "action-mp2361u0-dzh9a",
         "bone": "shoulderLeft",
         "direction": "backward",
-        "angle": 35
+        "angle": 80
+      },
+      {
+        "id": "action-mp2cdcol-saaay",
+        "bone": "elbowLeft",
+        "direction": "forward",
+        "angle": 63
       }
     ],
     "type": "fk",
@@ -55,50 +67,7 @@ export const BUILTIN_ACTIONS = [
     "sourceId": "action-mp1zw0u0-n6jj4",
     "isMirrored": true,
     "type": "fk",
-    "controls": [
-      {
-        "id": "action-mp2bqxzp-41oke",
-        "bone": "hipRight",
-        "direction": "forward",
-        "angle": 60
-      },
-      {
-        "id": "action-mp2bqxzp-othqi",
-        "bone": "kneeRight",
-        "direction": "forward",
-        "angle": -57
-      },
-      {
-        "id": "action-mp2bqxzp-mdf5b",
-        "bone": "hipLeft",
-        "direction": "backward",
-        "angle": 20
-      },
-      {
-        "id": "action-mp2bqxzp-78lrv",
-        "bone": "hip",
-        "direction": "forward",
-        "angle": -24
-      },
-      {
-        "id": "action-mp2bqxzp-bieje",
-        "bone": "shoulderLeft",
-        "direction": "forward",
-        "angle": 84
-      },
-      {
-        "id": "action-mp2bqxzp-h71tb",
-        "bone": "elbowLeft",
-        "direction": "up",
-        "angle": -94
-      },
-      {
-        "id": "action-mp2bqxzp-3rpwl",
-        "bone": "shoulderRight",
-        "direction": "backward",
-        "angle": 35
-      }
-    ],
+    "controls": [],
     "ikTargets": []
   }
 ]
