@@ -271,6 +271,7 @@ export const createEnvironment = (scene) => {
   }
 
   return {
+    player,
     playerState,
     setPlayerControlPointsVisible,
     setPlayerWalkIkActive,

@@ -3,6 +3,7 @@ import { CAMERA_HEIGHT, WORLD_TUNING } from '../config.js'
 import { createActionSequencePanel, readUserActionSequences } from './actionSequencePanel.js'
 import { createActionSettingsPanel, readUserActions } from './actionSettingsPanel.js'
 import { createActionWheel } from './actionWheel.js'
+import { BUILTIN_ACTIONS, BUILTIN_SEQUENCES } from './builtinAssets.js'
 import { createEnvironment } from './environment.js'
 import { createPlayerController } from './playerController.js'
 
@@ -219,8 +220,18 @@ export const createSceneApp = (app) => {
   const environment = createEnvironment(scene)
   const playerController = createPlayerController({
     camera,
+    player: environment.player,
     domElement: renderer.domElement,
     setPlayerWalkIkActive: environment.setPlayerWalkIkActive,
+    setPlayerRunSequenceActive: (active) => {
+      if (active) {
+        const sequence = BUILTIN_SEQUENCES.find((s) => s.label === '奔跑')
+        if (sequence) startActionSequence(sequence)
+      } else {
+        clearActionSequenceState()
+        environment.cancelPlayerUserAction()
+      }
+    },
     initialControlTarget: readControlTarget(),
   })
   const controlPointsVisible = readControlPointsVisible()
@@ -257,8 +268,14 @@ export const createSceneApp = (app) => {
   }
 
   const createSequenceSteps = (sequence, visitedSequenceIds = new Set()) => {
-    const actionsById = new Map(readUserActions().map((action) => [action.id, action]))
-    const sequencesById = new Map(readUserActionSequences().map((item) => [item.id, item]))
+    const actionsById = new Map([
+      ...BUILTIN_ACTIONS.map((action) => [action.id, action]),
+      ...readUserActions().map((action) => [action.id, action]),
+    ])
+    const sequencesById = new Map([
+      ...BUILTIN_SEQUENCES.map((item) => [item.id, item]),
+      ...readUserActionSequences().map((item) => [item.id, item]),
+    ])
     const nextVisitedSequenceIds = new Set([...visitedSequenceIds, sequence.id])
 
     return sequence.steps.flatMap((step) => {
@@ -331,8 +348,10 @@ export const createSceneApp = (app) => {
     }
     if (actionSequenceState.elapsed < step.duration) return
 
-    const sequence = readUserActionSequences()
-      .find((item) => item.id === actionSequenceState.sequenceId)
+    const sequence = [
+      ...BUILTIN_SEQUENCES,
+      ...readUserActionSequences(),
+    ].find((item) => item.id === actionSequenceState.sequenceId)
     if (!sequence) {
       clearActionSequenceState()
       return
@@ -452,20 +471,23 @@ export const createSceneApp = (app) => {
   }
 
   const rebuildActionWheel = () => {
+    const allActions = [...BUILTIN_ACTIONS, ...readUserActions()]
+    const allSequences = [...BUILTIN_SEQUENCES, ...readUserActionSequences()]
+
     if (
       environment.playerState.userActionId
-      && !readUserActions().some((action) => action.id === environment.playerState.userActionId)
+      && !allActions.some((action) => action.id === environment.playerState.userActionId)
     ) {
       environment.cancelPlayerUserAction()
     }
     if (
       actionSequenceState.sequenceId
-      && !readUserActionSequences().some((sequence) => sequence.id === actionSequenceState.sequenceId)
+      && !allSequences.some((sequence) => sequence.id === actionSequenceState.sequenceId)
     ) {
       clearActionSequenceState()
     }
     if (actionSequenceState.sequenceId) {
-      const sequence = readUserActionSequences()
+      const sequence = allSequences
         .find((item) => item.id === actionSequenceState.sequenceId)
       const sequenceSteps = sequence ? createSequenceSteps(sequence) : []
 

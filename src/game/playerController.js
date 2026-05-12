@@ -1,4 +1,4 @@
-import { Vector2 } from 'three'
+import { Vector2, Vector3 } from 'three'
 import { PointerLockControls } from 'three/examples/jsm/controls/PointerLockControls.js'
 import {
   CAMERA_HEIGHT,
@@ -13,8 +13,10 @@ const CONTROL_TARGETS = {
 
 export const createPlayerController = ({
   camera,
+  player,
   domElement,
   setPlayerWalkIkActive,
+  setPlayerRunSequenceActive,
   initialControlTarget = CONTROL_TARGETS.camera,
 }) => {
   const controls = new PointerLockControls(camera, domElement)
@@ -39,7 +41,6 @@ export const createPlayerController = ({
     movement.backward = false
     movement.left = false
     movement.right = false
-    setPlayerWalkIkActive?.(false)
   }
 
   const isCameraMoveKey = (code) => (
@@ -55,10 +56,18 @@ export const createPlayerController = ({
 
   const handleKeyDown = (event) => {
     if (!controls.isLocked) return
+    if (event.repeat) return
     if (isCameraMoveKey(event.code)) event.preventDefault()
 
     if (controlTarget === CONTROL_TARGETS.player) {
-      if (event.code === 'KeyW') setPlayerWalkIkActive?.(true)
+      if (event.code === 'KeyD') {
+        movement.forward = true
+        setPlayerRunSequenceActive?.(true)
+      }
+      if (event.code === 'KeyA') {
+        movement.backward = true
+        setPlayerRunSequenceActive?.(true)
+      }
       return
     }
 
@@ -89,7 +98,14 @@ export const createPlayerController = ({
     }
 
     if (controlTarget === CONTROL_TARGETS.player) {
-      if (event.code === 'KeyW') setPlayerWalkIkActive?.(false)
+      if (event.code === 'KeyD') {
+        movement.forward = false
+        if (!movement.backward) setPlayerRunSequenceActive?.(false)
+      }
+      if (event.code === 'KeyA') {
+        movement.backward = false
+        if (!movement.forward) setPlayerRunSequenceActive?.(false)
+      }
       return
     }
 
@@ -134,8 +150,28 @@ export const createPlayerController = ({
 
       if (moveIntent.lengthSq() > 0) {
         moveIntent.normalize()
-        controls.moveRight(moveIntent.x * MOVE_SPEED * delta)
-        controls.moveForward(moveIntent.y * MOVE_SPEED * delta)
+        const distanceRight = moveIntent.x * MOVE_SPEED * delta
+        const distanceForward = moveIntent.y * MOVE_SPEED * delta
+
+        if (controlTarget === CONTROL_TARGETS.camera) {
+          controls.moveRight(distanceRight)
+          controls.moveForward(distanceForward)
+        } else if (player) {
+          // 横版模式：按下 D 朝向初始前方 (0)，按下 A 朝向初始后方 (PI)
+          if (movement.forward && !movement.backward) {
+            player.rotation.y = 0
+          } else if (movement.backward && !movement.forward) {
+            player.rotation.y = Math.PI
+          }
+
+          const moveVector = new Vector3()
+          // 始终沿着角色的“正面”（本地 -Z）移动
+          moveVector.set(0, 0, -1).applyQuaternion(player.quaternion)
+          moveVector.multiplyScalar(MOVE_SPEED * delta)
+
+          player.position.add(moveVector)
+          camera.position.add(moveVector)
+        }
       }
     }
 
