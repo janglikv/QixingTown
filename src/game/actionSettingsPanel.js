@@ -1,12 +1,9 @@
 import {
   PLAYER_ACTION_BONE_OPTIONS,
-  PLAYER_ACTION_IK_CHAIN_OPTIONS,
-  PLAYER_ACTION_IK_DEFAULT_TARGETS,
 } from './createPlayer.js'
 
 const ACTIONS_STORAGE_KEY = 'qixing-town:user-actions'
 const PANEL_STATE_STORAGE_KEY = 'qixing-town:action-settings-panel'
-const IK_KEYBOARD_STEP = 0.03
 
 const JOINT_DIRECTIONS = [
   { value: 'forward', label: '向前' },
@@ -24,25 +21,6 @@ const getMirroredKey = (key) => {
 }
 
 const mirrorAction = (sourceAction) => {
-  const isIk = sourceAction.type === 'ik'
-
-  if (isIk) {
-    const ikTargets = (sourceAction.ikTargets || []).map((target) => ({
-      ...target,
-      id: createId(),
-      chain: getMirroredKey(target.chain),
-      position: {
-        ...target.position,
-        x: -target.position.x,
-      },
-    }))
-    return {
-      ...sourceAction,
-      ikTargets,
-      controls: [],
-    }
-  }
-
   const controls = (sourceAction.controls || []).map((control) => ({
     ...control,
     id: createId(),
@@ -207,7 +185,7 @@ const createField = ({ label, input }) => {
   return field
 }
 
-export const createActionSettingsPanel = ({ app, getIkTargetPosition }) => {
+export const createActionSettingsPanel = ({ app }) => {
   let actions = readUserActions()
   const initialPanelState = readPanelState()
   let selectedId = actions.some((action) => action.id === initialPanelState.selectedId)
@@ -215,17 +193,7 @@ export const createActionSettingsPanel = ({ app, getIkTargetPosition }) => {
     : null
   let visible = initialPanelState.visible
   let lastCursorVisible = null
-  let draftActionType = 'fk'
   let draftControls = []
-  let draftIkTargets = []
-  let activeIkTargetId = null
-  let ikKeyboardIntervalId = 0
-  const activeIkKeyCodes = new Set()
-
-  const createIkTargetPosition = (chain) => (
-    getIkTargetPosition?.(chain)
-    ?? { ...PLAYER_ACTION_IK_DEFAULT_TARGETS[chain] }
-  )
 
   const button = document.createElement('button')
   const panel = document.createElement('section')
@@ -233,10 +201,6 @@ export const createActionSettingsPanel = ({ app, getIkTargetPosition }) => {
   const list = document.createElement('div')
   const emptyText = document.createElement('div')
   const nameInput = createTextInput()
-  const typeSelect = createSelectInput([
-    { value: 'fk', label: 'FK' },
-    { value: 'ik', label: 'IK' },
-  ])
   const controlList = document.createElement('div')
   const emptyControlText = document.createElement('div')
   const addButton = document.createElement('button')
@@ -256,8 +220,7 @@ export const createActionSettingsPanel = ({ app, getIkTargetPosition }) => {
   const handleDetailClose = () => {
     const action = getSelectedAction()
 
-    // 关闭未配置任何运动的动作时直接清理，避免连续新建产生空数据。
-    if (action && draftControls.length === 0 && draftIkTargets.length === 0) {
+    if (action && draftControls.length === 0) {
       actions = actions.filter((item) => item.id !== action.id)
       selectedId = null
       persistAndRender()
@@ -361,7 +324,6 @@ export const createActionSettingsPanel = ({ app, getIkTargetPosition }) => {
   })
   form.append(
     createField({ label: '动作名称', input: nameInput }),
-    createField({ label: '控制类型', input: typeSelect }),
   )
 
   const controlTitle = document.createElement('div')
@@ -535,30 +497,14 @@ export const createActionSettingsPanel = ({ app, getIkTargetPosition }) => {
     })
   )
 
-  const areIkTargetsEqual = (left, right) => (
-    left.length === right.length
-    && left.every((target, index) => {
-      const savedTarget = right[index]
-      return savedTarget
-        && target.chain === savedTarget.chain
-        && target.position?.x === savedTarget.position?.x
-        && target.position?.y === savedTarget.position?.y
-        && target.position?.z === savedTarget.position?.z
-    })
-  )
-
   const isDraftDirty = () => {
     const action = getSelectedAction()
     if (!action) return false
 
-    const savedType = action.type === 'ik' ? 'ik' : 'fk'
     const savedControls = Array.isArray(action.controls) ? action.controls : []
-    const savedIkTargets = Array.isArray(action.ikTargets) ? action.ikTargets : []
 
     return nameInput.value.trim() !== action.label
-      || draftActionType !== savedType
       || !areControlsEqual(draftControls, savedControls)
-      || !areIkTargetsEqual(draftIkTargets, savedIkTargets)
   }
 
   const updateSaveStatus = () => {
@@ -588,7 +534,6 @@ export const createActionSettingsPanel = ({ app, getIkTargetPosition }) => {
 
     const isMirror = !!(action && action.isMirrored)
     nameInput.disabled = disabled || isMirror
-    typeSelect.disabled = disabled || isMirror
     saveButton.style.display = isMirror ? 'none' : 'block'
     addControlButton.style.display = isMirror ? 'none' : 'block'
     
@@ -596,18 +541,7 @@ export const createActionSettingsPanel = ({ app, getIkTargetPosition }) => {
     deleteButton.disabled = disabled
     addControlButton.disabled = disabled
     nameInput.value = action?.label ?? ''
-    draftActionType = action?.type === 'ik' ? 'ik' : 'fk'
-    typeSelect.value = draftActionType
     draftControls = Array.isArray(action?.controls) ? action.controls.map((control) => ({ ...control })) : []
-    draftIkTargets = Array.isArray(action?.ikTargets)
-      ? action.ikTargets.map((target) => ({
-        ...target,
-        position: { ...target.position },
-      }))
-      : []
-    activeIkTargetId = draftIkTargets.some((target) => target.id === activeIkTargetId)
-      ? activeIkTargetId
-      : draftIkTargets[0]?.id ?? null
     renderControlList()
     dispatchDraftPreview()
   }
@@ -619,43 +553,15 @@ export const createActionSettingsPanel = ({ app, getIkTargetPosition }) => {
     dispatchDraftPreview()
   }
 
-  const updateDraftIkTarget = ({ id, key, value }) => {
-    draftIkTargets = draftIkTargets.map((target) => {
-      if (target.id !== id) return target
-
-      if (key === 'chain') {
-        return {
-          ...target,
-          chain: value,
-          position: createIkTargetPosition(value),
-        }
-      }
-
-      return {
-        ...target,
-        position: {
-          ...target.position,
-          [key]: value,
-        },
-      }
-    })
-    dispatchDraftPreview()
-  }
-
-  const setActiveIkTarget = (id) => {
-    activeIkTargetId = id
-  }
-
   const renderControlList = () => {
     controlList.replaceChildren()
     const action = getSelectedAction()
-    const isIk = draftActionType === 'ik'
-    const rows = isIk ? draftIkTargets : draftControls
+    const rows = draftControls
 
-    controlTitle.textContent = isIk ? 'IK端点' : '关节运动'
-    addControlButton.textContent = isIk ? '新增IK' : '新增关节'
-    emptyControlText.textContent = isIk ? '暂无IK端点' : '暂无关节运动'
-    controlHeader.replaceChildren(...(isIk ? ['IK链', 'X', 'Y', 'Z', '排序', ''] : ['关节', '方向', '角度', '排序', '']).map((label) => {
+    controlTitle.textContent = '关节运动'
+    addControlButton.textContent = '新增关节'
+    emptyControlText.textContent = '暂无关节运动'
+    controlHeader.replaceChildren(...['关节', '方向', '角度', '排序', ''].map((label) => {
       const item = document.createElement('span')
       item.textContent = label
       Object.assign(item.style, {
@@ -665,122 +571,8 @@ export const createActionSettingsPanel = ({ app, getIkTargetPosition }) => {
       return item
     }))
     const isMirror = !!(action && action.isMirrored)
-    controlHeader.style.gridTemplateColumns = isIk
-      ? (isMirror ? '1fr 64px 64px 64px 96px' : '1fr 64px 64px 64px 96px 52px')
-      : (isMirror ? '1fr 1fr 80px 96px' : '1fr 1fr 80px 96px 52px')
+    controlHeader.style.gridTemplateColumns = isMirror ? '1fr 1fr 80px 96px' : '1fr 1fr 80px 96px 52px'
     emptyControlText.style.display = rows.length === 0 ? 'block' : 'none'
-
-    if (isIk) {
-      draftIkTargets.forEach((target, index) => {
-        const row = document.createElement('div')
-        const chainSelect = createSelectInput(PLAYER_ACTION_IK_CHAIN_OPTIONS)
-        const xInput = createTextInput()
-        const yInput = createTextInput()
-        const zInput = createTextInput()
-        const moveGroup = document.createElement('div')
-        const moveUpButton = document.createElement('button')
-        const moveDownButton = document.createElement('button')
-        const removeButton = document.createElement('button')
-
-        chainSelect.value = target.chain
-        chainSelect.disabled = isMirror
-        ;[
-          [xInput, 'x'],
-          [yInput, 'y'],
-          [zInput, 'z'],
-        ].forEach(([input, key]) => {
-          input.type = 'number'
-          input.step = '0.01'
-          input.value = String(target.position?.[key] ?? 0)
-          input.disabled = isMirror
-        })
-        moveUpButton.type = 'button'
-        moveDownButton.type = 'button'
-        moveUpButton.textContent = '上移'
-        moveDownButton.textContent = '下移'
-        moveUpButton.disabled = index === 0 || isMirror
-        moveDownButton.disabled = index === draftIkTargets.length - 1 || isMirror
-        removeButton.type = 'button'
-        removeButton.textContent = '删除'
-        removeButton.style.display = isMirror ? 'none' : 'block'
-        applyButtonStyle(moveUpButton)
-        applyButtonStyle(moveDownButton)
-        applyButtonStyle(removeButton, 'danger')
-        Object.assign(moveGroup.style, {
-          display: 'grid',
-          gridTemplateColumns: '1fr 1fr',
-          gap: '4px',
-        })
-        Object.assign(moveUpButton.style, {
-          padding: '0 6px',
-        })
-        Object.assign(moveDownButton.style, {
-          padding: '0 6px',
-        })
-        Object.assign(row.style, {
-          display: 'grid',
-          gridTemplateColumns: isMirror ? '1fr 64px 64px 64px 96px' : '1fr 64px 64px 64px 96px 52px',
-          gap: '8px',
-          alignItems: 'center',
-          padding: '4px',
-          border: '1px solid',
-          borderColor: target.id === activeIkTargetId ? 'rgba(83, 127, 214, 0.72)' : 'transparent',
-          borderRadius: '6px',
-        })
-
-        row.addEventListener('pointerdown', () => {
-          activeIkTargetId = target.id
-        })
-        chainSelect.addEventListener('change', () => {
-          activeIkTargetId = target.id
-          updateDraftIkTarget({ id: target.id, key: 'chain', value: chainSelect.value })
-          renderControlList()
-        })
-        ;[
-          [xInput, 'x'],
-          [yInput, 'y'],
-          [zInput, 'z'],
-        ].forEach(([input, key]) => {
-          input.addEventListener('focus', () => {
-            setActiveIkTarget(target.id)
-          })
-          input.addEventListener('input', () => {
-            activeIkTargetId = target.id
-            updateDraftIkTarget({ id: target.id, key, value: Number(input.value) })
-          })
-        })
-        moveUpButton.addEventListener('click', () => {
-          if (index === 0) return
-
-          const nextTargets = [...draftIkTargets]
-          ;[nextTargets[index - 1], nextTargets[index]] = [nextTargets[index], nextTargets[index - 1]]
-          draftIkTargets = nextTargets
-          renderControlList()
-          dispatchDraftPreview()
-        })
-        moveDownButton.addEventListener('click', () => {
-          if (index >= draftIkTargets.length - 1) return
-
-          const nextTargets = [...draftIkTargets]
-          ;[nextTargets[index], nextTargets[index + 1]] = [nextTargets[index + 1], nextTargets[index]]
-          draftIkTargets = nextTargets
-          renderControlList()
-          dispatchDraftPreview()
-        })
-        removeButton.addEventListener('click', () => {
-          draftIkTargets = draftIkTargets.filter((item) => item.id !== target.id)
-          activeIkTargetId = draftIkTargets[0]?.id ?? null
-          renderControlList()
-          dispatchDraftPreview()
-        })
-
-        moveGroup.append(moveUpButton, moveDownButton)
-        row.append(chainSelect, xInput, yInput, zInput, moveGroup)
-        if (!isMirror) row.append(removeButton)
-        controlList.append(row)
-      })
-      return
-    }
 
     draftControls.forEach((control, index) => {
       const row = document.createElement('div')
@@ -892,8 +684,8 @@ export const createActionSettingsPanel = ({ app, getIkTargetPosition }) => {
       mirrorButton.type = 'button'
       mirrorButton.textContent = '镜像'
       moveUpButton.type = 'button'
+      moveDownButton.textContent = '上移'
       moveDownButton.type = 'button'
-      moveUpButton.textContent = '上移'
       moveDownButton.textContent = '下移'
 
       applyButtonStyle(item)
@@ -1000,13 +792,6 @@ export const createActionSettingsPanel = ({ app, getIkTargetPosition }) => {
       controls: Array.isArray(sourceAction.controls)
         ? sourceAction.controls.map((control) => ({ ...control, id: createId() }))
         : [],
-      ikTargets: Array.isArray(sourceAction.ikTargets)
-        ? sourceAction.ikTargets.map((target) => ({
-          ...target,
-          id: createId(),
-          position: { ...target.position },
-        }))
-        : [],
     }
 
     actions = [...actions, nextAction]
@@ -1022,7 +807,6 @@ export const createActionSettingsPanel = ({ app, getIkTargetPosition }) => {
       isMirrored: true,
       type: sourceAction.type,
       controls: [],
-      ikTargets: [],
     }
 
     actions = resolveMirrors([...actions, nextAction])
@@ -1041,19 +825,12 @@ export const createActionSettingsPanel = ({ app, getIkTargetPosition }) => {
       && JOINT_DIRECTIONS.some((direction) => direction.value === control.direction)
       && Number.isFinite(control.angle)
     ))
-    const ikTargets = draftIkTargets.filter((target) => (
-      PLAYER_ACTION_IK_CHAIN_OPTIONS.some((chain) => chain.value === target.chain)
-      && Number.isFinite(target.position?.x)
-      && Number.isFinite(target.position?.y)
-      && Number.isFinite(target.position?.z)
-    ))
 
     const updatedAction = {
       ...action,
       label,
-      type: draftActionType,
+      type: 'fk',
       controls,
-      ikTargets,
     }
 
     actions = resolveMirrors(actions.map((item) => (item.id === action.id ? updatedAction : item)))
@@ -1062,25 +839,6 @@ export const createActionSettingsPanel = ({ app, getIkTargetPosition }) => {
 
   const handleAddControl = () => {
     if (!getSelectedAction()) return
-
-    if (draftActionType === 'ik') {
-      const chain = PLAYER_ACTION_IK_CHAIN_OPTIONS[0]?.value
-      if (!chain) return
-      const id = createId()
-
-      draftIkTargets = [
-        ...draftIkTargets,
-        {
-          id,
-          chain,
-          position: createIkTargetPosition(chain),
-        },
-      ]
-      activeIkTargetId = id
-      renderControlList()
-      dispatchDraftPreview()
-      return
-    }
 
     draftControls = [
       ...draftControls,
@@ -1101,24 +859,15 @@ export const createActionSettingsPanel = ({ app, getIkTargetPosition }) => {
     return {
       ...action,
       label: label || action.label,
-      type: draftActionType,
+      type: 'fk',
       controls: draftControls.map((control) => ({ ...control })),
-      ikTargets: draftIkTargets.map((target) => ({
-        ...target,
-        position: { ...target.position },
-      })),
     }
-  }
-
-  const clearIkTargetMarkers = () => {
-    app.dispatchEvent(new CustomEvent('qixing-town:clear-ik-target-markers'))
   }
 
   const dispatchDraftPreview = () => {
     updateSaveStatus()
     const action = getSelectedAction()
     if (!visible || detailPanel.style.display !== 'block' || !action) {
-      clearIkTargetMarkers()
       return
     }
 
@@ -1142,109 +891,12 @@ export const createActionSettingsPanel = ({ app, getIkTargetPosition }) => {
     persistAndRender()
   }
 
-  const handleCancel = () => {
-    selectedId = null
-    persistPanelState()
-    renderList()
-    syncForm()
-  }
-
-  const handleTypeChange = () => {
-    draftActionType = typeSelect.value === 'ik' ? 'ik' : 'fk'
-    activeIkTargetId = draftIkTargets[0]?.id ?? null
-    renderControlList()
-    dispatchDraftPreview()
-  }
-
-  const isIkKeyboardActive = () => (
-    visible
-    && draftActionType === 'ik'
-    && getSelectedAction()
-    && detailPanel.style.display === 'block'
-  )
-
-  const getIkKeyOffset = (code) => {
-    if (code === 'KeyW') return { z: -IK_KEYBOARD_STEP }
-    if (code === 'KeyS') return { z: IK_KEYBOARD_STEP }
-    if (code === 'KeyA') return { x: -IK_KEYBOARD_STEP }
-    if (code === 'KeyD') return { x: IK_KEYBOARD_STEP }
-    if (code === 'Space') return { y: IK_KEYBOARD_STEP }
-    if (code === 'ShiftLeft' || code === 'ShiftRight') return { y: -IK_KEYBOARD_STEP }
-
-    return null
-  }
-
-  const applyIkKeyboardOffset = (offset) => {
-    if (!isIkKeyboardActive()) return
-
-    const targetId = draftIkTargets.some((target) => target.id === activeIkTargetId)
-      ? activeIkTargetId
-      : draftIkTargets[0]?.id
-    if (!targetId) return
-
-    activeIkTargetId = targetId
-    draftIkTargets = draftIkTargets.map((target) => {
-      if (target.id !== targetId) return target
-
-      return {
-        ...target,
-        position: {
-          x: (target.position?.x ?? 0) + (offset.x ?? 0),
-          y: (target.position?.y ?? 0) + (offset.y ?? 0),
-          z: (target.position?.z ?? 0) + (offset.z ?? 0),
-        },
-      }
-    })
-    renderControlList()
-    dispatchDraftPreview()
-  }
-
-  const applyActiveIkKeyboardOffsets = () => {
-    if (!isIkKeyboardActive()) {
-      activeIkKeyCodes.clear()
-      window.clearInterval(ikKeyboardIntervalId)
-      ikKeyboardIntervalId = 0
-      return
-    }
-
-    activeIkKeyCodes.forEach((code) => {
-      applyIkKeyboardOffset(getIkKeyOffset(code))
-    })
-  }
-
-  const handleIkKeyDown = (event) => {
-    if (!visible || draftActionType !== 'ik' || !getSelectedAction()) return
-    if (detailPanel.style.display !== 'block') return
-    if (event.target === nameInput || event.target === typeSelect) return
-
-    const offset = getIkKeyOffset(event.code)
-    if (!offset) return
-
-    event.preventDefault()
-    activeIkKeyCodes.add(event.code)
-    if (!event.repeat) applyIkKeyboardOffset(offset)
-    if (!ikKeyboardIntervalId) {
-      ikKeyboardIntervalId = window.setInterval(applyActiveIkKeyboardOffsets, 48)
-    }
-  }
-
-  const handleIkKeyUp = (event) => {
-    activeIkKeyCodes.delete(event.code)
-    if (activeIkKeyCodes.size > 0) return
-
-    window.clearInterval(ikKeyboardIntervalId)
-    ikKeyboardIntervalId = 0
-  }
-
   button.addEventListener('click', handleToggle)
   nameInput.addEventListener('input', dispatchDraftPreview)
-  typeSelect.addEventListener('change', handleTypeChange)
   addButton.addEventListener('click', handleAdd)
   addControlButton.addEventListener('click', handleAddControl)
   saveButton.addEventListener('click', handleSave)
   deleteButton.addEventListener('click', handleDelete)
-  window.addEventListener('keydown', handleIkKeyDown)
-  window.addEventListener('keyup', handleIkKeyUp)
   window.addEventListener('resize', syncDetailPanelPosition)
     ;[button, panel, detailPanel].forEach((element) => {
       element.addEventListener('pointerdown', stopPointerLock)
@@ -1267,7 +919,6 @@ export const createActionSettingsPanel = ({ app, getIkTargetPosition }) => {
       if (!cursorVisible) {
         panel.style.display = 'none'
         detailPanel.style.display = 'none'
-        clearIkTargetMarkers()
       } else {
         panel.style.display = visible && !getSelectedAction() ? 'block' : 'none'
         detailPanel.style.display = visible && getSelectedAction() ? 'block' : 'none'
@@ -1275,17 +926,12 @@ export const createActionSettingsPanel = ({ app, getIkTargetPosition }) => {
       }
     },
     dispose: () => {
-      clearIkTargetMarkers()
       button.removeEventListener('click', handleToggle)
       nameInput.removeEventListener('input', dispatchDraftPreview)
-      typeSelect.removeEventListener('change', handleTypeChange)
       addButton.removeEventListener('click', handleAdd)
       addControlButton.removeEventListener('click', handleAddControl)
       saveButton.removeEventListener('click', handleSave)
       deleteButton.removeEventListener('click', handleDelete)
-      window.removeEventListener('keydown', handleIkKeyDown)
-      window.removeEventListener('keyup', handleIkKeyUp)
-      window.clearInterval(ikKeyboardIntervalId)
       window.removeEventListener('resize', syncDetailPanelPosition)
         ;[button, panel, detailPanel].forEach((element) => {
           element.removeEventListener('pointerdown', stopPointerLock)

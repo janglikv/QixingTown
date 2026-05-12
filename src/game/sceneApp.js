@@ -222,7 +222,6 @@ export const createSceneApp = (app) => {
     camera,
     player: environment.player,
     domElement: renderer.domElement,
-    setPlayerWalkIkActive: environment.setPlayerWalkIkActive,
     setPlayerRunSequenceActive: (active) => {
       if (active) {
         const sequence = BUILTIN_SEQUENCES.find((s) => s.label === '奔跑')
@@ -250,7 +249,6 @@ export const createSceneApp = (app) => {
   })
   const actionSettingsPanel = createActionSettingsPanel({
     app,
-    getIkTargetPosition: environment.getPlayerIkTargetPosition,
   })
   const actionSequencePanel = createActionSequencePanel({ app })
   const actionSequenceState = {
@@ -466,10 +464,6 @@ export const createSceneApp = (app) => {
     }
   }
 
-  const onClearIkTargetMarkers = () => {
-    environment.clearPlayerIkTargetMarkers()
-  }
-
   const rebuildActionWheel = () => {
     const allActions = [...BUILTIN_ACTIONS, ...readUserActions()]
     const allSequences = [...BUILTIN_SEQUENCES, ...readUserActionSequences()]
@@ -509,7 +503,6 @@ export const createSceneApp = (app) => {
   window.addEventListener('keydown', onKeyDown)
   window.addEventListener('keyup', onKeyUp)
   app.addEventListener('qixing-town:play-action', onPlayUserAction)
-  app.addEventListener('qixing-town:clear-ik-target-markers', onClearIkTargetMarkers)
   app.addEventListener('qixing-town:user-actions-changed', rebuildActionWheel)
   app.addEventListener('qixing-town:action-sequences-changed', rebuildActionWheel)
 
@@ -549,7 +542,6 @@ export const createSceneApp = (app) => {
     window.removeEventListener('keydown', onKeyDown)
     window.removeEventListener('keyup', onKeyUp)
     app.removeEventListener('qixing-town:play-action', onPlayUserAction)
-    app.removeEventListener('qixing-town:clear-ik-target-markers', onClearIkTargetMarkers)
     app.removeEventListener('qixing-town:user-actions-changed', rebuildActionWheel)
     app.removeEventListener('qixing-town:action-sequences-changed', rebuildActionWheel)
     persistCameraStateOnUnload()

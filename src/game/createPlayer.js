@@ -73,9 +73,6 @@ const PLAYER_DEFINITION = {
                 cname: '左脚',
                 length: 0.62,
                 direction: [-0.04, -0.62, 0],
-                ik: {
-                  up: 2,
-                },
               },
             },
           },
@@ -98,9 +95,6 @@ const PLAYER_DEFINITION = {
                 cname: '右脚',
                 length: 0.62,
                 direction: [0.04, -0.62, 0],
-                ik: {
-                  up: 2,
-                },
               },
             },
           },
@@ -135,9 +129,6 @@ const PLAYER_DEFINITION = {
                     cname: '左手',
                     length: 0.32,
                     direction: [-0.04, -0.32, 0],
-                    ik: {
-                      up: 2,
-                    },
                   },
                 },
               },
@@ -160,9 +151,6 @@ const PLAYER_DEFINITION = {
                     cname: '右手',
                     length: 0.32,
                     direction: [0.04, -0.32, 0],
-                    ik: {
-                      up: 2,
-                    },
                   },
                 },
               },
@@ -194,98 +182,6 @@ const PLAYER_DEFINITION = {
 
 export const PLAYER_MODEL_RIG = createRigDefinition(PLAYER_DEFINITION)
 export const PLAYER_ACTION_BONE_OPTIONS = PLAYER_MODEL_RIG.actionBoneOptions
-export const PLAYER_ACTION_IK_CHAIN_OPTIONS = Object.values(PLAYER_MODEL_RIG.ikChainsByKey)
-  .map((chain) => ({
-    value: chain.key,
-    label: chain.cname,
-  }))
-export const PLAYER_ACTION_IK_DEFAULT_TARGETS = Object.fromEntries(
-  Object.values(PLAYER_MODEL_RIG.ikChainsByKey).map((chain) => {
-    const joints = createRigJointPositions(PLAYER_MODEL_RIG)
-    const end = joints[chain.end]
-
-    return [
-      chain.key,
-      {
-        x: end.x,
-        y: end.y,
-        z: end.z,
-      },
-    ]
-  }),
-)
-
-const PLAYER_WALK_ACTION_ID = 'player-preset-walk'
-const PLAYER_WALK_STRIDE = 0.24
-const PLAYER_WALK_LIFT = 0.13
-const PLAYER_WALK_DURATION = 1.1
-
-const lerpValue = (from, to, amount) => from + (to - from) * amount
-
-const createWalkFootPosition = ({ base, progress, footStart, footMid, footEnd }) => {
-  if (progress < footStart) return { x: base.x, y: base.y, z: base.z }
-
-  if (progress < footMid) {
-    const amount = (progress - footStart) / (footMid - footStart)
-
-    return {
-      x: base.x,
-      y: lerpValue(base.y, base.y + PLAYER_WALK_LIFT, amount),
-      z: lerpValue(base.z, base.z - PLAYER_WALK_STRIDE * 0.5, amount),
-    }
-  }
-
-  if (progress < footEnd) {
-    const amount = (progress - footMid) / (footEnd - footMid)
-
-    return {
-      x: base.x,
-      y: lerpValue(base.y + PLAYER_WALK_LIFT, base.y, amount),
-      z: lerpValue(base.z - PLAYER_WALK_STRIDE * 0.5, base.z - PLAYER_WALK_STRIDE, amount),
-    }
-  }
-
-  return {
-    x: base.x,
-    y: base.y,
-    z: base.z - PLAYER_WALK_STRIDE,
-  }
-}
-
-export const createPlayerWalkIkAction = (elapsed) => {
-  const leftBase = PLAYER_ACTION_IK_DEFAULT_TARGETS.footLeft
-  const rightBase = PLAYER_ACTION_IK_DEFAULT_TARGETS.footRight
-  const progress = Math.min(Math.max(elapsed / PLAYER_WALK_DURATION, 0), 1)
-
-  return {
-    id: PLAYER_WALK_ACTION_ID,
-    label: '走路',
-    type: 'ik',
-    controls: [],
-    ikTargets: [
-      {
-        chain: 'footLeft',
-        position: createWalkFootPosition({
-          base: leftBase,
-          progress,
-          footStart: 0,
-          footMid: 0.25,
-          footEnd: 0.5,
-        }),
-      },
-      {
-        chain: 'footRight',
-        position: createWalkFootPosition({
-          base: rightBase,
-          progress,
-          footStart: 0.5,
-          footMid: 0.75,
-          footEnd: 1,
-        }),
-      },
-    ],
-  }
-}
 
 export const createPlayerJointPositions = () => createRigJointPositions(PLAYER_MODEL_RIG)
 

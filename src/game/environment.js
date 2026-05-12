@@ -3,15 +3,9 @@ import {
   Color,
   DirectionalLight,
   FogExp2,
-  BufferGeometry,
-  Line,
-  LineBasicMaterial,
   Mesh,
-  MeshBasicMaterial,
   MeshStandardMaterial,
   PlaneGeometry,
-  SphereGeometry,
-  Vector3,
 } from 'three'
 import {
   GROUND_REPOSITION_STEP,
@@ -20,7 +14,7 @@ import {
   WORLD_TUNING,
 } from '../config.js'
 import { createGroundTexture } from './createGroundTexture.js'
-import { createPlayer, createPlayerWalkIkAction, PLAYER_MODEL_RIG } from './createPlayer.js'
+import { createPlayer } from './createPlayer.js'
 import { createPolaris, createStarField } from './createStarField.js'
 import { createTree } from './createTree.js'
 
@@ -72,23 +66,6 @@ export const createEnvironment = (scene) => {
   const playerState = {
     userActionId: null,
   }
-  const playerWalkState = {
-    active: false,
-    elapsed: 0,
-  }
-  const ikTargetGeometry = new SphereGeometry(0.032, 16, 12)
-  const ikTargetMaterial = new MeshBasicMaterial({
-    color: '#ff2d2d',
-    depthTest: false,
-  })
-  const ikTargetLineMaterial = new LineBasicMaterial({
-    color: '#ff2d2d',
-    depthTest: false,
-    transparent: true,
-    opacity: 0.65,
-  })
-  const ikTargetLineGroundDepth = 0.8
-  const ikTargetMarkers = []
   scene.add(starField, polaris, ...trees, player)
 
   const groundTexture = createGroundTexture()
@@ -116,11 +93,6 @@ export const createEnvironment = (scene) => {
       WORLD_TUNING.polarisMinOpacity
       + twinkle * (WORLD_TUNING.polarisMaxOpacity - WORLD_TUNING.polarisMinOpacity)
     )
-    if (playerWalkState.active) {
-      playerWalkState.elapsed += delta
-      // 走路预置是逐帧 IK 目标，不写入用户动作列表。
-      player.userData.previewUserAction(createPlayerWalkIkAction(playerWalkState.elapsed))
-    }
     player.userData.update(delta)
   }
 
@@ -140,94 +112,17 @@ export const createEnvironment = (scene) => {
     player.userData.setControlPointsVisible(visible)
   }
 
-  const getPlayerIkTargetPosition = (chainKey) => {
-    const chain = PLAYER_MODEL_RIG.ikChainsByKey[chainKey]
-    const bone = chain ? player.userData.bones[chain.end] : null
-
-    if (!bone) return null
-
-    player.updateMatrixWorld(true)
-
-    const position = player.worldToLocal(bone.getWorldPosition(new Vector3()))
-
-    return {
-      x: position.x,
-      y: position.y,
-      z: position.z,
-    }
-  }
-
-  const syncPlayerIkTargetMarkers = (action) => {
-    const targets = action?.type === 'ik' && Array.isArray(action.ikTargets)
-      ? action.ikTargets
-      : []
-
-    while (ikTargetMarkers.length < targets.length) {
-      const marker = new Mesh(ikTargetGeometry, ikTargetMaterial)
-      const line = new Line(new BufferGeometry(), ikTargetLineMaterial)
-
-      marker.renderOrder = 100
-      marker.userData.isIkTargetMarker = true
-      line.renderOrder = 99
-      line.userData.isIkTargetMarker = true
-      marker.userData.groundLine = line
-      ikTargetMarkers.push(marker)
-      player.add(line)
-      player.add(marker)
-    }
-
-    ikTargetMarkers.forEach((marker, index) => {
-      const line = marker.userData.groundLine
-      const target = targets[index]
-      const position = target?.position
-      const visible = (
-        Number.isFinite(position?.x)
-        && Number.isFinite(position?.y)
-        && Number.isFinite(position?.z)
-      )
-
-      marker.visible = visible
-      line.visible = visible
-      if (visible) {
-        marker.position.set(position.x, position.y, position.z)
-        // 调试目标点的垂线固定在玩家局部地面上，便于从任意视角判断水平落点。
-        line.geometry.setFromPoints([
-          marker.position.clone().setY(-ikTargetLineGroundDepth),
-          marker.position.clone(),
-        ])
-      }
-    })
-  }
-
   const playPlayerUserAction = (action, options) => {
-    setPlayerWalkIkActive(false)
     playerState.userActionId = action.id
-    syncPlayerIkTargetMarkers(null)
     player.userData.playUserAction(action, options)
   }
 
   const previewPlayerUserAction = (action) => {
-    syncPlayerIkTargetMarkers(action)
     player.userData.previewUserAction(action)
   }
 
   const cancelPlayerUserAction = () => {
     playerState.userActionId = null
-    syncPlayerIkTargetMarkers(null)
-    player.userData.cancelUserAction()
-  }
-
-  const setPlayerWalkIkActive = (active) => {
-    if (playerWalkState.active === active) return
-
-    playerWalkState.active = active
-    playerWalkState.elapsed = 0
-    if (active) {
-      playerState.userActionId = null
-      syncPlayerIkTargetMarkers(null)
-      return
-    }
-
     player.userData.cancelUserAction()
   }
 
@@ -254,17 +149,10 @@ export const createEnvironment = (scene) => {
       tree.userData.dispose?.()
     })
     player.traverse((child) => {
-      if (child.userData.isIkTargetMarker) return
       if (child.isMesh) child.geometry.dispose()
     })
     player.userData.material.dispose()
     player.userData.dispose?.()
-    ikTargetGeometry.dispose()
-    ikTargetMaterial.dispose()
-    ikTargetLineMaterial.dispose()
-    ikTargetMarkers.forEach((marker) => {
-      marker.userData.groundLine?.geometry.dispose()
-    })
     ground.geometry.dispose()
     ground.material.dispose()
     groundTexture.dispose()
@@ -274,12 +162,9 @@ export const createEnvironment = (scene) => {
     player,
     playerState,
     setPlayerControlPointsVisible,
-    setPlayerWalkIkActive,
     playPlayerUserAction,
     previewPlayerUserAction,
     cancelPlayerUserAction,
-    getPlayerIkTargetPosition,
-    clearPlayerIkTargetMarkers: () => syncPlayerIkTargetMarkers(null),
     update,
     updateGroundPosition,
     dispose,
