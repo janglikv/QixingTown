@@ -17,16 +17,73 @@ const JOINT_DIRECTIONS = [
 
 const createId = () => `action-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`
 
+const getMirroredKey = (key) => {
+  if (key.endsWith('Left')) return key.replace('Left', 'Right')
+  if (key.endsWith('Right')) return key.replace('Right', 'Left')
+  return key
+}
+
+const mirrorAction = (sourceAction) => {
+  const isIk = sourceAction.type === 'ik'
+
+  if (isIk) {
+    const ikTargets = (sourceAction.ikTargets || []).map((target) => ({
+      ...target,
+      id: createId(),
+      chain: getMirroredKey(target.chain),
+      position: {
+        ...target.position,
+        x: -target.position.x,
+      },
+    }))
+    return {
+      ...sourceAction,
+      ikTargets,
+      controls: [],
+    }
+  }
+
+  const controls = (sourceAction.controls || []).map((control) => ({
+    ...control,
+    id: createId(),
+    bone: getMirroredKey(control.bone),
+  }))
+
+  return {
+    ...sourceAction,
+    controls,
+    ikTargets: [],
+  }
+}
+
+const resolveMirrors = (actions) => actions.map((action) => {
+  if (action.isMirrored && action.sourceId) {
+    const source = actions.find((a) => a.id === action.sourceId)
+    if (source) {
+      const mirroredData = mirrorAction(source)
+      return {
+        ...action,
+        ...mirroredData,
+        id: action.id,
+        label: action.label,
+      }
+    }
+  }
+  return action
+})
+
 export const readUserActions = () => {
   try {
-    const actions = JSON.parse(window.localStorage.getItem(ACTIONS_STORAGE_KEY))
+    const raw = JSON.parse(window.localStorage.getItem(ACTIONS_STORAGE_KEY))
 
-    if (!Array.isArray(actions)) return []
+    if (!Array.isArray(raw)) return []
 
-    return actions.filter((action) => (
+    const actions = raw.filter((action) => (
       typeof action?.id === 'string'
       && typeof action?.label === 'string'
     ))
+
+    return resolveMirrors(actions)
   } catch {
     return []
   }
@@ -34,7 +91,21 @@ export const readUserActions = () => {
 
 const writeActions = (actions) => {
   try {
-    window.localStorage.setItem(ACTIONS_STORAGE_KEY, JSON.stringify(actions))
+    const serialized = actions.map((action) => {
+      if (action.isMirrored && action.sourceId) {
+        return {
+          id: action.id,
+          label: action.label,
+          sourceId: action.sourceId,
+          isMirrored: true,
+          type: action.type,
+          controls: [],
+          ikTargets: [],
+        }
+      }
+      return action
+    })
+    window.localStorage.setItem(ACTIONS_STORAGE_KEY, JSON.stringify(serialized))
   } catch {
     // Storage can be unavailable in restricted browser modes.
   }
@@ -173,6 +244,7 @@ export const createActionSettingsPanel = ({ app, getIkTargetPosition }) => {
   const saveButton = document.createElement('button')
   const deleteButton = document.createElement('button')
   const saveStatusText = document.createElement('span')
+  const mirrorNotice = document.createElement('div')
 
   const handleToggle = () => {
     visible = !visible
@@ -246,6 +318,16 @@ export const createActionSettingsPanel = ({ app, getIkTargetPosition }) => {
     color: '#eef5ee',
     fontSize: '14px',
     userSelect: 'none',
+  })
+
+  Object.assign(mirrorNotice.style, {
+    fontSize: '12px',
+    color: '#537fd6',
+    marginBottom: '10px',
+    padding: '6px 10px',
+    background: 'rgba(83, 127, 214, 0.12)',
+    borderRadius: '4px',
+    display: 'none',
   })
 
   const title = document.createElement('div')
@@ -429,7 +511,7 @@ export const createActionSettingsPanel = ({ app, getIkTargetPosition }) => {
   const detailCloseButton = createCloseButton(handleDetailClose)
 
   panel.append(panelCloseButton, title, list, emptyText, addBar)
-  detailPanel.append(detailCloseButton, detailTitle, form, controlTitle, controlHeader, controlList, emptyControlText, controlBar, actionsBar)
+  detailPanel.append(detailCloseButton, detailTitle, mirrorNotice, form, controlTitle, controlHeader, controlList, emptyControlText, controlBar, actionsBar)
   app.append(button, panel, detailPanel)
 
   const stopPointerLock = (event) => {
@@ -495,8 +577,21 @@ export const createActionSettingsPanel = ({ app, getIkTargetPosition }) => {
     panel.style.display = visible && !action ? 'block' : 'none'
     detailPanel.style.display = visible && action ? 'block' : 'none'
     addBar.style.display = 'flex'
-    nameInput.disabled = disabled
-    typeSelect.disabled = disabled
+
+    if (action && action.isMirrored && action.sourceId) {
+      const source = actions.find((a) => a.id === action.sourceId)
+      mirrorNotice.textContent = `此动作同步镜像自 "${source ? source.label : '已删除动作'}"，不可直接编辑。`
+      mirrorNotice.style.display = 'block'
+    } else {
+      mirrorNotice.style.display = 'none'
+    }
+
+    const isMirror = !!(action && action.isMirrored)
+    nameInput.disabled = disabled || isMirror
+    typeSelect.disabled = disabled || isMirror
+    saveButton.style.display = isMirror ? 'none' : 'block'
+    addControlButton.style.display = isMirror ? 'none' : 'block'
+    
     saveButton.disabled = disabled
     deleteButton.disabled = disabled
     addControlButton.disabled = disabled
@@ -553,6 +648,7 @@ export const createActionSettingsPanel = ({ app, getIkTargetPosition }) => {
 
   const renderControlList = () => {
     controlList.replaceChildren()
+    const action = getSelectedAction()
     const isIk = draftActionType === 'ik'
     const rows = isIk ? draftIkTargets : draftControls
 
@@ -568,7 +664,10 @@ export const createActionSettingsPanel = ({ app, getIkTargetPosition }) => {
       })
       return item
     }))
-    controlHeader.style.gridTemplateColumns = isIk ? '1fr 64px 64px 64px 96px 52px' : '1fr 1fr 80px 96px 52px'
+    const isMirror = !!(action && action.isMirrored)
+    controlHeader.style.gridTemplateColumns = isIk
+      ? (isMirror ? '1fr 64px 64px 64px 96px' : '1fr 64px 64px 64px 96px 52px')
+      : (isMirror ? '1fr 1fr 80px 96px' : '1fr 1fr 80px 96px 52px')
     emptyControlText.style.display = rows.length === 0 ? 'block' : 'none'
 
     if (isIk) {
@@ -584,6 +683,7 @@ export const createActionSettingsPanel = ({ app, getIkTargetPosition }) => {
         const removeButton = document.createElement('button')
 
         chainSelect.value = target.chain
+        chainSelect.disabled = isMirror
         ;[
           [xInput, 'x'],
           [yInput, 'y'],
@@ -592,15 +692,17 @@ export const createActionSettingsPanel = ({ app, getIkTargetPosition }) => {
           input.type = 'number'
           input.step = '0.01'
           input.value = String(target.position?.[key] ?? 0)
+          input.disabled = isMirror
         })
         moveUpButton.type = 'button'
         moveDownButton.type = 'button'
         moveUpButton.textContent = '上移'
         moveDownButton.textContent = '下移'
-        moveUpButton.disabled = index === 0
-        moveDownButton.disabled = index === draftIkTargets.length - 1
+        moveUpButton.disabled = index === 0 || isMirror
+        moveDownButton.disabled = index === draftIkTargets.length - 1 || isMirror
         removeButton.type = 'button'
         removeButton.textContent = '删除'
+        removeButton.style.display = isMirror ? 'none' : 'block'
         applyButtonStyle(moveUpButton)
         applyButtonStyle(moveDownButton)
         applyButtonStyle(removeButton, 'danger')
@@ -617,7 +719,7 @@ export const createActionSettingsPanel = ({ app, getIkTargetPosition }) => {
         })
         Object.assign(row.style, {
           display: 'grid',
-          gridTemplateColumns: '1fr 64px 64px 64px 96px 52px',
+          gridTemplateColumns: isMirror ? '1fr 64px 64px 64px 96px' : '1fr 64px 64px 64px 96px 52px',
           gap: '8px',
           alignItems: 'center',
           padding: '4px',
@@ -673,7 +775,8 @@ export const createActionSettingsPanel = ({ app, getIkTargetPosition }) => {
         })
 
         moveGroup.append(moveUpButton, moveDownButton)
-        row.append(chainSelect, xInput, yInput, zInput, moveGroup, removeButton)
+        row.append(chainSelect, xInput, yInput, zInput, moveGroup)
+        if (!isMirror) row.append(removeButton)
         controlList.append(row)
       })
       return
@@ -690,16 +793,19 @@ export const createActionSettingsPanel = ({ app, getIkTargetPosition }) => {
       const removeButton = document.createElement('button')
 
       boneSelect.value = control.bone
+      boneSelect.disabled = isMirror
       directionSelect.value = control.direction
+      directionSelect.disabled = isMirror
       angleInput.type = 'number'
       angleInput.step = '1'
       angleInput.value = String(control.angle)
+      angleInput.disabled = isMirror
       moveUpButton.type = 'button'
       moveDownButton.type = 'button'
       moveUpButton.textContent = '上移'
       moveDownButton.textContent = '下移'
-      moveUpButton.disabled = index === 0
-      moveDownButton.disabled = index === draftControls.length - 1
+      moveUpButton.disabled = index === 0 || isMirror
+      moveDownButton.disabled = index === draftControls.length - 1 || isMirror
       removeButton.type = 'button'
       removeButton.textContent = '删除'
       applyButtonStyle(moveUpButton)
@@ -718,7 +824,7 @@ export const createActionSettingsPanel = ({ app, getIkTargetPosition }) => {
       })
       Object.assign(row.style, {
         display: 'grid',
-        gridTemplateColumns: '1fr 1fr 80px 96px 52px',
+        gridTemplateColumns: isMirror ? '1fr 1fr 80px 96px' : '1fr 1fr 80px 96px 52px',
         gap: '8px',
         alignItems: 'center',
       })
@@ -757,7 +863,8 @@ export const createActionSettingsPanel = ({ app, getIkTargetPosition }) => {
       })
 
       moveGroup.append(moveUpButton, moveDownButton)
-      row.append(boneSelect, directionSelect, angleInput, moveGroup, removeButton)
+      row.append(boneSelect, directionSelect, angleInput, moveGroup)
+      if (!isMirror) row.append(removeButton)
       controlList.append(row)
     })
   }
@@ -766,20 +873,38 @@ export const createActionSettingsPanel = ({ app, getIkTargetPosition }) => {
     list.replaceChildren()
     emptyText.style.display = actions.length === 0 ? 'block' : 'none'
 
-    actions.forEach((action) => {
+    actions.forEach((action, index) => {
       const row = document.createElement('div')
       const item = document.createElement('button')
       const copyButton = document.createElement('button')
+      const mirrorButton = document.createElement('button')
+      const moveGroup = document.createElement('div')
+      const moveUpButton = document.createElement('button')
+      const moveDownButton = document.createElement('button')
+
+      const hasMirror = actions.some((a) => a.sourceId === action.id)
+      const canMirror = !action.isMirrored && !hasMirror
 
       item.type = 'button'
       item.textContent = action.label
       copyButton.type = 'button'
       copyButton.textContent = '复制'
+      mirrorButton.type = 'button'
+      mirrorButton.textContent = '镜像'
+      moveUpButton.type = 'button'
+      moveDownButton.type = 'button'
+      moveUpButton.textContent = '上移'
+      moveDownButton.textContent = '下移'
+
       applyButtonStyle(item)
       applyButtonStyle(copyButton)
+      applyButtonStyle(mirrorButton)
+      applyButtonStyle(moveUpButton)
+      applyButtonStyle(moveDownButton)
+
       Object.assign(row.style, {
         display: 'grid',
-        gridTemplateColumns: '1fr 56px',
+        gridTemplateColumns: canMirror ? '1fr 56px 56px 112px' : '1fr 56px 112px',
         gap: '6px',
         alignItems: 'center',
       })
@@ -791,6 +916,26 @@ export const createActionSettingsPanel = ({ app, getIkTargetPosition }) => {
       Object.assign(copyButton.style, {
         padding: '0 8px',
       })
+      Object.assign(mirrorButton.style, {
+        padding: '0 8px',
+        display: canMirror ? 'block' : 'none',
+      })
+      Object.assign(moveGroup.style, {
+        display: 'flex',
+        gap: '4px',
+      })
+      Object.assign(moveUpButton.style, {
+        padding: '0 8px',
+        flex: '1',
+      })
+      Object.assign(moveDownButton.style, {
+        padding: '0 8px',
+        flex: '1',
+      })
+
+      moveUpButton.disabled = index === 0
+      moveDownButton.disabled = index === actions.length - 1
+
       item.addEventListener('click', () => {
         selectedId = action.id
         persistPanelState()
@@ -800,7 +945,28 @@ export const createActionSettingsPanel = ({ app, getIkTargetPosition }) => {
       copyButton.addEventListener('click', () => {
         handleCopy(action)
       })
+      mirrorButton.addEventListener('click', () => {
+        handleMirror(action)
+      })
+      moveUpButton.addEventListener('click', () => {
+        if (index === 0) return
+        const nextActions = [...actions]
+        ;[nextActions[index - 1], nextActions[index]] = [nextActions[index], nextActions[index - 1]]
+        actions = nextActions
+        persistAndRender()
+      })
+      moveDownButton.addEventListener('click', () => {
+        if (index >= actions.length - 1) return
+        const nextActions = [...actions]
+        ;[nextActions[index], nextActions[index + 1]] = [nextActions[index + 1], nextActions[index]]
+        actions = nextActions
+        persistAndRender()
+      })
+
+      moveGroup.append(moveUpButton, moveDownButton)
       row.append(item, copyButton)
+      if (canMirror) row.append(mirrorButton)
+      row.append(moveGroup)
       list.append(row)
     })
   }
@@ -816,15 +982,12 @@ export const createActionSettingsPanel = ({ app, getIkTargetPosition }) => {
     syncForm()
   }
 
-  const handleAdd = () => {
-    const nextAction = {
-      id: createId(),
-      label: `新动作 ${actions.length + 1}`,
-      controls: [],
-    }
+  const handleDelete = () => {
+    const action = getSelectedAction()
+    if (!action) return
 
-    actions = [...actions, nextAction]
-    selectedId = nextAction.id
+    actions = actions.filter((item) => item.id !== action.id && item.sourceId !== action.id)
+    selectedId = null
     persistAndRender()
   }
 
@@ -832,6 +995,8 @@ export const createActionSettingsPanel = ({ app, getIkTargetPosition }) => {
     const nextAction = {
       ...sourceAction,
       id: createId(),
+      sourceId: null,
+      isMirrored: false,
       controls: Array.isArray(sourceAction.controls)
         ? sourceAction.controls.map((control) => ({ ...control, id: createId() }))
         : [],
@@ -845,6 +1010,22 @@ export const createActionSettingsPanel = ({ app, getIkTargetPosition }) => {
     }
 
     actions = [...actions, nextAction]
+    selectedId = nextAction.id
+    persistAndRender()
+  }
+
+  const handleMirror = (sourceAction) => {
+    const nextAction = {
+      id: createId(),
+      label: `${sourceAction.label} (镜像)`,
+      sourceId: sourceAction.id,
+      isMirrored: true,
+      type: sourceAction.type,
+      controls: [],
+      ikTargets: [],
+    }
+
+    actions = resolveMirrors([...actions, nextAction])
     selectedId = nextAction.id
     persistAndRender()
   }
@@ -867,11 +1048,15 @@ export const createActionSettingsPanel = ({ app, getIkTargetPosition }) => {
       && Number.isFinite(target.position?.z)
     ))
 
-    actions = actions.map((item) => (
-      item.id === action.id
-        ? { ...item, label, type: draftActionType, controls, ikTargets }
-        : item
-    ))
+    const updatedAction = {
+      ...action,
+      label,
+      type: draftActionType,
+      controls,
+      ikTargets,
+    }
+
+    actions = resolveMirrors(actions.map((item) => (item.id === action.id ? updatedAction : item)))
     persistAndRender()
   }
 
@@ -945,10 +1130,15 @@ export const createActionSettingsPanel = ({ app, getIkTargetPosition }) => {
     }))
   }
 
-  const handleDelete = () => {
-    if (!selectedId) return
+  const handleAdd = () => {
+    const nextAction = {
+      id: createId(),
+      label: `新动作 ${actions.length + 1}`,
+      controls: [],
+    }
 
-    actions = actions.filter((action) => action.id !== selectedId)
+    actions = [...actions, nextAction]
+    selectedId = nextAction.id
     persistAndRender()
   }
 

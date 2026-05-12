@@ -73,7 +73,6 @@ const PLAYER_DEFINITION = {
                 cname: '左脚',
                 length: 0.62,
                 direction: [-0.04, -0.62, 0],
-                supportContact: true,
                 ik: {
                   up: 2,
                 },
@@ -99,7 +98,6 @@ const PLAYER_DEFINITION = {
                 cname: '右脚',
                 length: 0.62,
                 direction: [0.04, -0.62, 0],
-                supportContact: true,
                 ik: {
                   up: 2,
                 },
@@ -180,14 +178,6 @@ const PLAYER_DEFINITION = {
     { key: 'bothLegs', cname: '双腿', bones: ['hipLeft', 'hipRight'] },
     { key: 'bothFeet', cname: '双脚', bones: ['kneeLeft', 'kneeRight'] },
   ],
-  balance: {
-    torsoBone: 'neck',
-    strength: 1.35,
-    maxOffset: 0.32,
-    immediate: true,
-    momentArmWeight: 2.8,
-    supportResponse: 8,
-  },
   render: {
     endCaps: {
       enabled: true,

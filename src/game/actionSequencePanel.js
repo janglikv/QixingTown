@@ -768,6 +768,91 @@ export const createActionSequencePanel = ({ app }) => {
     }
   }
 
+  const showJsonModal = (title, json) => {
+    const overlay = document.createElement('div')
+    Object.assign(overlay.style, {
+      position: 'fixed',
+      left: '0',
+      top: '0',
+      width: '100%',
+      height: '100%',
+      background: 'rgba(0, 0, 0, 0.72)',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      zIndex: '1000',
+    })
+
+    const modal = document.createElement('div')
+    Object.assign(modal.style, {
+      width: '80%',
+      height: '80%',
+      background: '#07111f',
+      border: '1px solid rgba(238, 245, 238, 0.24)',
+      borderRadius: '8px',
+      padding: '16px',
+      display: 'flex',
+      flexDirection: 'column',
+      gap: '12px',
+    })
+
+    const header = document.createElement('div')
+    header.textContent = title
+    Object.assign(header.style, {
+      fontSize: '16px',
+      fontWeight: '600',
+      color: '#eef5ee',
+    })
+
+    const textarea = document.createElement('textarea')
+    textarea.value = json
+    textarea.readOnly = true
+    Object.assign(textarea.style, {
+      flex: '1',
+      background: 'rgba(7, 17, 31, 0.88)',
+      color: '#eef5ee',
+      border: '1px solid rgba(238, 245, 238, 0.24)',
+      borderRadius: '4px',
+      padding: '12px',
+      fontFamily: 'monospace',
+      fontSize: '13px',
+      resize: 'none',
+      whiteSpace: 'pre',
+    })
+
+    const footer = document.createElement('div')
+    Object.assign(footer.style, {
+      display: 'flex',
+      justifyContent: 'flex-end',
+      gap: '8px',
+    })
+
+    const copyBtn = document.createElement('button')
+    copyBtn.textContent = '复制到剪贴板'
+    applyButtonStyle(copyBtn)
+    copyBtn.addEventListener('click', () => {
+      textarea.select()
+      document.execCommand('copy')
+      copyBtn.textContent = '已复制！'
+      setTimeout(() => { copyBtn.textContent = '复制到剪贴板' }, 2000)
+    })
+
+    const closeBtn = document.createElement('button')
+    closeBtn.textContent = '关闭'
+    applyButtonStyle(closeBtn)
+    closeBtn.addEventListener('click', () => {
+      overlay.remove()
+    })
+
+    footer.append(copyBtn, closeBtn)
+    modal.append(header, textarea, footer)
+    overlay.append(modal)
+    document.body.append(overlay)
+
+    textarea.focus()
+    textarea.select()
+  }
+
   const handleExport = () => {
     const sequence = createDraftSequence()
     if (!sequence) return
@@ -780,7 +865,7 @@ export const createActionSequencePanel = ({ app }) => {
       actions,
     }, null, 2)
 
-    window.prompt('动作序列导出 JSON', json)
+    showJsonModal('动作序列导出 JSON', json)
   }
 
   const handleDelete = () => {

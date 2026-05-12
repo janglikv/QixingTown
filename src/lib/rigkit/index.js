@@ -2,22 +2,12 @@
 export {
   createRigDefinition,
   createRigJointPositions,
-  estimateRigCenterOfMass,
 } from './definition.js'
 
 export {
   createRigActionController,
   resolveDirectionalControlRotation,
 } from './actionController.js'
-
-export {
-  createRigBalanceController,
-} from './balance.js'
-
-export {
-  createRigContactLocks,
-  lockRigContacts,
-} from './contactLock.js'
 
 export {
   createRigSkeleton,
