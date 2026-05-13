@@ -283,6 +283,8 @@ export const createActionSequencePanel = ({ app }) => {
     updateSelectedTrack({ steps })
   }
 
+  const getSelectedTrackSteps = () => getSelectedTrack()?.steps ?? []
+
   const persistPanelState = () => {
     writePanelState({ visible, selectedId })
   }
@@ -676,7 +678,7 @@ export const createActionSequencePanel = ({ app }) => {
     const actionOptions = getActionOptions()
     const sequenceOptions = getSequenceOptions()
     const track = getSelectedTrack()
-    const draftSteps = track?.steps ?? []
+    const draftSteps = getSelectedTrackSteps()
     const canAddStep = !!track
 
     stepList.replaceChildren()
@@ -765,8 +767,9 @@ export const createActionSequencePanel = ({ app }) => {
               ? 'delay'
               : 'action'
         const options = getTargetOptions(type)
+        const currentSteps = getSelectedTrackSteps()
 
-        const nextSteps = draftSteps.map((item) => (
+        const nextSteps = currentSteps.map((item) => (
           item.id === step.id
             ? {
               ...item,
@@ -783,7 +786,8 @@ export const createActionSequencePanel = ({ app }) => {
         renderStepList()
       })
       targetSelect.addEventListener('change', () => {
-        const nextSteps = draftSteps.map((item) => (
+        const currentSteps = getSelectedTrackSteps()
+        const nextSteps = currentSteps.map((item) => (
           item.id === step.id
             ? {
               ...item,
@@ -795,13 +799,15 @@ export const createActionSequencePanel = ({ app }) => {
         setSelectedTrackSteps(nextSteps)
       })
       durationInput.addEventListener('input', () => {
-        const nextSteps = draftSteps.map((item) => (
+        const currentSteps = getSelectedTrackSteps()
+        const nextSteps = currentSteps.map((item) => (
           item.id === step.id ? { ...item, duration: Number(durationInput.value) } : item
         ))
         setSelectedTrackSteps(nextSteps)
       })
       repeatInput.addEventListener('input', () => {
-        const nextSteps = draftSteps.map((item) => (
+        const currentSteps = getSelectedTrackSteps()
+        const nextSteps = currentSteps.map((item) => (
           item.id === step.id
             ? item.type === 'position'
               ? { ...item, amount: Number(repeatInput.value) }
@@ -813,21 +819,22 @@ export const createActionSequencePanel = ({ app }) => {
       moveUpButton.addEventListener('click', () => {
         if (index === 0) return
 
-        const nextSteps = [...draftSteps]
+        const nextSteps = [...getSelectedTrackSteps()]
         ;[nextSteps[index - 1], nextSteps[index]] = [nextSteps[index], nextSteps[index - 1]]
         setSelectedTrackSteps(nextSteps)
         renderStepList()
       })
       moveDownButton.addEventListener('click', () => {
-        if (index >= draftSteps.length - 1) return
+        const currentSteps = getSelectedTrackSteps()
+        if (index >= currentSteps.length - 1) return
 
-        const nextSteps = [...draftSteps]
+        const nextSteps = [...currentSteps]
         ;[nextSteps[index], nextSteps[index + 1]] = [nextSteps[index + 1], nextSteps[index]]
         setSelectedTrackSteps(nextSteps)
         renderStepList()
       })
       removeButton.addEventListener('click', () => {
-        setSelectedTrackSteps(draftSteps.filter((item) => item.id !== step.id))
+        setSelectedTrackSteps(getSelectedTrackSteps().filter((item) => item.id !== step.id))
         renderStepList()
       })
 

@@ -1,4 +1,4 @@
-import { PerspectiveCamera, Scene, SRGBColorSpace, Timer, WebGLRenderer } from 'three'
+import { PerspectiveCamera, Scene, SRGBColorSpace, Timer, Vector3, WebGLRenderer } from 'three'
 import { CAMERA_HEIGHT, WORLD_TUNING } from '../config.js'
 import { createActionSequencePanel, normalizeActionSequence, readUserActionSequences } from './actionSequencePanel.js'
 import { createActionSettingsPanel, readUserActions } from './actionSettingsPanel.js'
@@ -22,6 +22,7 @@ const createRenderer = (app) => {
 const CONTROL_POINTS_VISIBLE_STORAGE_KEY = 'qixing-town:control-points-visible'
 const CONTROL_TARGET_STORAGE_KEY = 'qixing-town:control-target'
 const DEFAULT_ACTION_SEQUENCE_STEP_DURATION = 0.9
+const COMPOSED_ACTION_ID = 'action-sequences:composed'
 const BUILTIN_ACTIONS = BUILTIN_ASSETS.actions
 const BUILTIN_SEQUENCES = BUILTIN_ASSETS.sequences
 
@@ -261,14 +262,15 @@ export const createSceneApp = (app) => {
     player: environment.player,
     domElement: renderer.domElement,
     setPlayerRunSequenceActive: (active) => {
+      const sequence = BUILTIN_SEQUENCES.find((s) => s.label === '奔跑')
+      if (!sequence) return
+
       if (active) {
-        const sequence = BUILTIN_SEQUENCES.find((s) => s.label === '奔跑')
-        if (sequence && actionSequenceState.sequenceId !== sequence.id) {
+        if (!isActionSequenceActive(sequence.id)) {
           startActionSequence(sequence)
         }
       } else {
-        clearActionSequenceState()
-        environment.cancelPlayerUserAction()
+        stopActionSequence(sequence.id)
       }
     },
     initialControlTarget: readControlTarget(),
@@ -310,14 +312,29 @@ export const createSceneApp = (app) => {
   })
   const actionSequencePanel = createActionSequencePanel({ app })
   const actionSequenceState = {
-    sequenceId: null,
-    tracks: [],
+    activeSequences: [],
+    activeAction: null,
+    positionOffset: new Vector3(),
+    actionSignature: '',
+  }
+
+  const clearActionSequencePositionOffset = () => {
+    if (actionSequenceState.positionOffset.lengthSq() === 0) return
+
+    environment.player.position.sub(actionSequenceState.positionOffset)
+    actionSequenceState.positionOffset.set(0, 0, 0)
   }
 
   const clearActionSequenceState = () => {
-    actionSequenceState.sequenceId = null
-    actionSequenceState.tracks = []
+    clearActionSequencePositionOffset()
+    actionSequenceState.activeSequences = []
+    actionSequenceState.activeAction = null
+    actionSequenceState.actionSignature = ''
   }
+
+  const isActionSequenceActive = (sequenceId) => (
+    actionSequenceState.activeSequences.some((sequence) => sequence.id === sequenceId)
+  )
 
   const createActionsById = () => {
     const allActions = [
@@ -405,10 +422,11 @@ export const createSceneApp = (app) => {
       id: track.id,
       label: track.label,
       loop: track.loop === true,
-      steps: createSequenceSteps({ ...normalizedSequence, steps: track.steps }),
+      steps: createSequenceSteps({ ...normalizedSequence, tracks: undefined, steps: track.steps }),
       index: 0,
       elapsed: 0,
       done: false,
+      positionOffset: new Vector3(),
     })).filter((track) => track.steps.length > 0)
 
     return tracks
@@ -420,13 +438,11 @@ export const createSceneApp = (app) => {
 
   const createComposedAction = () => {
     const controlsByBone = new Map()
-
-    actionSequenceState.tracks.forEach((track) => {
-      const step = track.steps[track.index]
-      if (!step?.action || step.action.type === 'ik') return
+    const applyActionControls = (action) => {
+      if (!action || action.type === 'ik') return
 
       const nextControlsByBone = new Map()
-      ;(step.action.controls || []).forEach((control) => {
+      ;(action.controls || []).forEach((control) => {
         getControlBones(control).forEach((bone) => {
           const controls = nextControlsByBone.get(bone) ?? []
           controls.push({
@@ -437,16 +453,25 @@ export const createSceneApp = (app) => {
         })
       })
       nextControlsByBone.forEach((controls, bone) => {
-        // 后轨覆盖同骨骼，但保留该轨道内同一骨骼的多条 FK 控制。
         controlsByBone.set(bone, controls)
       })
+    }
+
+    actionSequenceState.activeSequences.forEach((activeSequence) => {
+      activeSequence.tracks.forEach((track) => {
+        const step = track.steps[track.index]
+
+        applyActionControls(step?.action)
+      })
     })
+    // 普通动作作为最后一层，覆盖序列里的同骨骼控制，但不影响未控制骨骼。
+    applyActionControls(actionSequenceState.activeAction)
 
     const controls = [...controlsByBone.values()].flat()
     if (controls.length === 0) return null
 
     return {
-      id: `${actionSequenceState.sequenceId}:composed`,
+      id: COMPOSED_ACTION_ID,
       label: '动作序列叠加',
       type: 'fk',
       controls,
@@ -454,122 +479,220 @@ export const createSceneApp = (app) => {
     }
   }
 
+  const createComposedActionSignature = () => actionSequenceState.activeSequences
+    .map((activeSequence) => activeSequence.tracks.map((track) => {
+      const step = track.steps[track.index]
+
+      return step?.action ? `${activeSequence.id}:${track.id}:${step.action.id}` : `${activeSequence.id}:${track.id}:`
+    }).join('|'))
+    .join('|')
+    + (actionSequenceState.activeAction ? `|action:${actionSequenceState.activeAction.id}` : '')
+
   const playComposedActionSequence = (transitionDuration = DEFAULT_ACTION_SEQUENCE_STEP_DURATION) => {
     const action = createComposedAction()
-    if (!action) return
+    if (!action) {
+      environment.cancelPlayerUserAction()
+      return
+    }
 
     environment.playPlayerUserAction(action, {
       transitionDuration,
     })
   }
 
-  const applySequencePositionDelta = ({ axis, amount }) => {
+  const applySequencePositionDelta = (track, { axis, amount }) => {
     if (!['x', 'y', 'z'].includes(axis) || amount === 0) return
 
-    environment.player.position[axis] += amount
-    if (axis !== 'y') {
-      camera.position[axis] += amount
+    track.positionOffset[axis] += amount
+  }
+
+  const createTrackPositionOffset = (track) => {
+    const offset = new Vector3()
+
+    if (track.positionOffset.x !== 0 || track.positionOffset.z !== 0) {
+      const localOffset = new Vector3(track.positionOffset.x, 0, track.positionOffset.z)
+
+      localOffset.applyQuaternion(environment.player.quaternion)
+      offset.add(localOffset)
     }
+    offset.y = track.positionOffset.y
+
+    return offset
+  }
+
+  const syncActionSequencePositionOffset = () => {
+    environment.player.position.sub(actionSequenceState.positionOffset)
+    actionSequenceState.positionOffset.set(0, 0, 0)
+    actionSequenceState.activeSequences.forEach((activeSequence) => {
+      activeSequence.tracks.forEach((track) => {
+        actionSequenceState.positionOffset.add(createTrackPositionOffset(track))
+      })
+    })
+    environment.player.position.add(actionSequenceState.positionOffset)
   }
 
   const startActionSequence = (sequence) => {
+    clearActionSequencePositionOffset()
     const sequenceTracks = createSequenceTracks(sequence)
     if (sequenceTracks.length === 0) return
+    const hasActiveSequence = actionSequenceState.activeSequences.length > 0
 
-    actionSequenceState.sequenceId = sequence.id
-    actionSequenceState.tracks = sequenceTracks
-    playComposedActionSequence(Math.max(...sequenceTracks.map((track) => (
-      track.steps[track.index]?.duration ?? 0
-    ))))
+    actionSequenceState.activeSequences = [
+      ...actionSequenceState.activeSequences.filter((item) => item.id !== sequence.id),
+      {
+        id: sequence.id,
+        tracks: sequenceTracks,
+      },
+    ]
+    syncActionSequencePositionOffset()
+    actionSequenceState.actionSignature = createComposedActionSignature()
+    playComposedActionSequence(hasActiveSequence
+      ? 0
+      : Math.max(...sequenceTracks.map((track) => (
+        track.steps[track.index]?.action ? track.steps[track.index].duration ?? 0 : 0
+      )))
+    )
+  }
+
+  const stopActionSequence = (sequenceId) => {
+    if (!isActionSequenceActive(sequenceId)) return
+
+    clearActionSequencePositionOffset()
+    actionSequenceState.activeSequences = actionSequenceState.activeSequences
+      .filter((sequence) => sequence.id !== sequenceId)
+    syncActionSequencePositionOffset()
+    actionSequenceState.actionSignature = createComposedActionSignature()
+    playComposedActionSequence(0)
+  }
+
+  const setComposedUserAction = (action) => {
+    actionSequenceState.activeAction = action
+    actionSequenceState.actionSignature = createComposedActionSignature()
+    playComposedActionSequence(0)
+  }
+
+  const clearComposedUserAction = () => {
+    if (!actionSequenceState.activeAction) return
+
+    actionSequenceState.activeAction = null
+    actionSequenceState.actionSignature = createComposedActionSignature()
+    playComposedActionSequence(0)
   }
 
   const updateActionSequence = (delta) => {
-    if (!actionSequenceState.sequenceId) return
+    if (actionSequenceState.activeSequences.length === 0) return
 
-    const sequence = [
+    clearActionSequencePositionOffset()
+
+    const sequencesById = new Map([
       ...BUILTIN_SEQUENCES.map(normalizeActionSequence),
       ...readUserActionSequences(),
-    ].find((item) => item.id === actionSequenceState.sequenceId)
-    if (!sequence) {
-      clearActionSequenceState()
-      return
-    }
+    ].map((sequence) => [sequence.id, sequence]))
 
-    let changed = false
+    let actionChanged = false
     let transitionDuration = 0
-    actionSequenceState.tracks.forEach((track) => {
-      if (track.done) return
+    const nextActiveSequences = []
 
-      let remainingDelta = delta
-      let guard = 0
-      while (guard < 100 && remainingDelta >= 0 && !track.done) {
-        const currentStep = track.steps[track.index]
-        const duration = currentStep?.duration ?? 0
-        if (!currentStep) break
-
-        if (duration > 0) {
-          const remainingDuration = Math.max(0, duration - track.elapsed)
-          const consumed = Math.min(remainingDelta, remainingDuration)
-          if (currentStep.position) {
-            applySequencePositionDelta({
-              axis: currentStep.position.axis,
-              amount: currentStep.position.amount * (consumed / duration),
-            })
-          }
-          track.elapsed += consumed
-          remainingDelta -= consumed
-          if (track.elapsed < duration) break
-        } else if (currentStep.position) {
-          applySequencePositionDelta(currentStep.position)
-        }
-
-        track.elapsed = duration > 0 ? track.elapsed - duration : 0
-        track.index += 1
-        if (track.index >= track.steps.length) {
-          if (track.loop || sequence.loop) {
-            track.index = 0
-          } else {
-            track.index = track.steps.length - 1
-            track.done = true
-          }
-        }
-        const nextStep = track.steps[track.index]
-        transitionDuration = Math.max(transitionDuration, nextStep?.duration ?? 0)
-        changed = true
-        guard += 1
-        if (remainingDelta === 0 && duration > 0) break
+    actionSequenceState.activeSequences.forEach((activeSequence) => {
+      const sequence = sequencesById.get(activeSequence.id)
+      if (!sequence) {
+        actionChanged = true
+        return
       }
+
+      activeSequence.tracks.forEach((track) => {
+        if (track.done) return
+
+        let remainingDelta = delta
+        let guard = 0
+        while (guard < 100 && remainingDelta >= 0 && !track.done) {
+          const currentStep = track.steps[track.index]
+          const duration = currentStep?.duration ?? 0
+          if (!currentStep) break
+
+          if (duration > 0) {
+            const remainingDuration = Math.max(0, duration - track.elapsed)
+            const consumed = Math.min(remainingDelta, remainingDuration)
+            if (currentStep.position) {
+              applySequencePositionDelta(track, {
+                axis: currentStep.position.axis,
+                amount: currentStep.position.amount * (consumed / duration),
+              })
+            }
+            track.elapsed += consumed
+            remainingDelta -= consumed
+            if (track.elapsed < duration) break
+          } else if (currentStep.position) {
+            applySequencePositionDelta(track, currentStep.position)
+          }
+
+          track.elapsed = duration > 0 ? track.elapsed - duration : 0
+          track.index += 1
+          if (track.index >= track.steps.length) {
+            if (track.loop || sequence.loop) {
+              track.index = 0
+              track.positionOffset.set(0, 0, 0)
+            } else {
+              track.index = track.steps.length - 1
+              track.done = true
+            }
+          }
+          const nextStep = track.steps[track.index]
+          if (currentStep.action !== nextStep?.action) {
+            actionChanged = true
+            transitionDuration = Math.max(transitionDuration, nextStep?.action ? nextStep.duration ?? 0 : 0)
+          }
+          guard += 1
+          if (remainingDelta === 0 && duration > 0) break
+        }
+      })
+
+      if (activeSequence.tracks.every((track) => track.done)) {
+        actionChanged = true
+        return
+      }
+      nextActiveSequences.push(activeSequence)
     })
 
-    if (actionSequenceState.tracks.every((track) => track.done)) {
-      clearActionSequenceState()
-      return
-    }
-    if (changed) {
-      playComposedActionSequence(transitionDuration)
+    actionSequenceState.activeSequences = nextActiveSequences
+    syncActionSequencePositionOffset()
+    const nextActionSignature = createComposedActionSignature()
+    if (nextActionSignature !== actionSequenceState.actionSignature) {
+      actionSequenceState.actionSignature = nextActionSignature
+      playComposedActionSequence(actionChanged ? transitionDuration : 0)
     }
   }
 
   const createUserActionWheelActions = () => readUserActions().map((action) => ({
     label: action.label,
-    isActive: () => environment.playerState.userActionId === action.id,
+    isActive: () => actionSequenceState.activeAction?.id === action.id
+      || environment.playerState.userActionId === action.id,
     toggle: () => {
-      if (environment.playerState.userActionId === action.id) {
-        clearActionSequenceState()
-        environment.cancelPlayerUserAction()
-      } else {
-        clearActionSequenceState()
-        environment.playPlayerUserAction(action)
+      if (actionSequenceState.activeSequences.length > 0) {
+        if (actionSequenceState.activeAction?.id === action.id) {
+          clearComposedUserAction()
+          return
+        }
+
+        setComposedUserAction(action)
+        return
       }
+
+      if (environment.playerState.userActionId === action.id) {
+        environment.cancelPlayerUserAction()
+        return
+      }
+
+      clearActionSequenceState()
+      environment.playPlayerUserAction(action)
     },
   }))
   const createUserActionSequenceWheelActions = () => readUserActionSequences().map((sequence) => ({
     label: `序列：${sequence.label}`,
-    isActive: () => actionSequenceState.sequenceId === sequence.id,
+    isActive: () => isActionSequenceActive(sequence.id),
     toggle: () => {
-      if (actionSequenceState.sequenceId === sequence.id) {
-        clearActionSequenceState()
-        environment.cancelPlayerUserAction()
+      if (isActionSequenceActive(sequence.id)) {
+        stopActionSequence(sequence.id)
         return
       }
 
@@ -629,6 +752,11 @@ export const createSceneApp = (app) => {
     if (event.detail.preview) {
       environment.previewPlayerUserAction(event.detail.action)
     } else {
+      if (actionSequenceState.activeSequences.length > 0) {
+        setComposedUserAction(event.detail.action)
+        return
+      }
+
       environment.playPlayerUserAction(event.detail.action)
     }
   }
@@ -639,28 +767,41 @@ export const createSceneApp = (app) => {
 
     if (
       environment.playerState.userActionId
+      && environment.playerState.userActionId !== COMPOSED_ACTION_ID
       && !allActions.some((action) => action.id === environment.playerState.userActionId)
     ) {
       environment.cancelPlayerUserAction()
     }
     if (
-      actionSequenceState.sequenceId
-      && !allSequences.some((sequence) => sequence.id === actionSequenceState.sequenceId)
+      actionSequenceState.activeAction
+      && !allActions.some((action) => action.id === actionSequenceState.activeAction.id)
     ) {
-      clearActionSequenceState()
+      actionSequenceState.activeAction = null
     }
-    if (actionSequenceState.sequenceId) {
-      const sequence = allSequences
-        .find((item) => item.id === actionSequenceState.sequenceId)
-      const sequenceTracks = sequence ? createSequenceTracks(sequence) : []
+    if (
+      actionSequenceState.activeSequences.length > 0
+      && actionSequenceState.activeSequences.some((activeSequence) => (
+        !allSequences.some((sequence) => sequence.id === activeSequence.id)
+      ))
+    ) {
+      clearActionSequencePositionOffset()
+      actionSequenceState.activeSequences = actionSequenceState.activeSequences.filter((activeSequence) => (
+        allSequences.some((sequence) => sequence.id === activeSequence.id)
+      ))
+    }
+    if (actionSequenceState.activeSequences.length > 0) {
+      clearActionSequencePositionOffset()
+      actionSequenceState.activeSequences = actionSequenceState.activeSequences.flatMap((activeSequence) => {
+        const sequence = allSequences.find((item) => item.id === activeSequence.id)
+        const sequenceTracks = sequence ? createSequenceTracks(sequence) : []
 
-      if (sequenceTracks.length === 0) {
-        clearActionSequenceState()
-      } else {
-        // 动作列表变更后刷新序列引用，避免继续播放已删除动作的旧快照。
-        actionSequenceState.tracks = sequenceTracks
-        playComposedActionSequence()
-      }
+        return sequenceTracks.length > 0
+          ? [{ ...activeSequence, tracks: sequenceTracks }]
+          : []
+      })
+      syncActionSequencePositionOffset()
+      actionSequenceState.actionSignature = createComposedActionSignature()
+      playComposedActionSequence()
     }
     actionWheel.close()
     actionWheel.dispose()

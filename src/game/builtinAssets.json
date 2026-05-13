@@ -22,6 +22,97 @@
           "repeat": 1,
           "duration": 0.2
         }
+      ],
+      "tracks": [
+        {
+          "id": "action-sequence-mp2h6ntd-lx10c-track-main",
+          "label": "主轨道",
+          "loop": true,
+          "steps": [
+            {
+              "id": "action-sequence-step-mp2h6ntd-nhib9",
+              "type": "action",
+              "targetId": "action-mp2h6ntd-g5fzl",
+              "repeat": 1,
+              "duration": 0.2
+            },
+            {
+              "id": "action-sequence-step-mp2h6ntd-6zmvt",
+              "type": "action",
+              "targetId": "action-mp2h6ntd-euoyd",
+              "repeat": 1,
+              "duration": 0.2
+            }
+          ]
+        },
+        {
+          "id": "action-sequence-mp3df6xr-yyzpx",
+          "label": "轨道 x",
+          "loop": true,
+          "steps": [
+            {
+              "id": "action-sequence-mp3df9p1-82n8t",
+              "type": "position",
+              "targetId": "x",
+              "axis": "x",
+              "amount": 0.1,
+              "repeat": 1,
+              "duration": 0.2
+            },
+            {
+              "id": "action-sequence-mp3dfadc-dhsqp",
+              "type": "position",
+              "targetId": "x",
+              "axis": "x",
+              "amount": -0.1,
+              "repeat": 1,
+              "duration": 0.2
+            }
+          ]
+        },
+        {
+          "id": "action-sequence-mp3dt3eb-s1w54",
+          "label": "轨道 y",
+          "loop": true,
+          "steps": [
+            {
+              "id": "action-sequence-mp3dt6tp-0o354",
+              "type": "position",
+              "targetId": "y",
+              "axis": "y",
+              "amount": 0.1,
+              "repeat": 1,
+              "duration": 0.1
+            },
+            {
+              "id": "action-sequence-mp3dt7fb-ygbbt",
+              "type": "position",
+              "targetId": "y",
+              "axis": "y",
+              "amount": -0.1,
+              "repeat": 1,
+              "duration": 0.1
+            },
+            {
+              "id": "action-sequence-mp3duzvl-kenw4",
+              "type": "position",
+              "targetId": "y",
+              "axis": "y",
+              "amount": 0.1,
+              "repeat": 1,
+              "duration": 0.1
+            },
+            {
+              "id": "action-sequence-mp3dv0jn-t8dpo",
+              "type": "position",
+              "targetId": "y",
+              "axis": "y",
+              "amount": -0.1,
+              "repeat": 1,
+              "duration": 0.1
+            }
+          ]
+        }
       ]
     }
   ],
