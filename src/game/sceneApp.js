@@ -3,7 +3,8 @@ import { CAMERA_HEIGHT, WORLD_TUNING } from '../config.js'
 import { createActionSequencePanel, normalizeActionSequence, readUserActionSequences } from './actionSequencePanel.js'
 import { createActionSettingsPanel, readUserActions } from './actionSettingsPanel.js'
 import { createActionWheel } from './actionWheel.js'
-import BUILTIN_ASSETS from './builtinAssets.json'
+import BUILTIN_JUMP_ASSETS from './actionAssets/jump.json'
+import BUILTIN_RUN_ASSETS from './actionAssets/run.json'
 import { PLAYER_MODEL_RIG } from './createPlayer.js'
 import { createEnvironment } from './environment.js'
 import { createPlayerController } from './playerController.js'
@@ -23,8 +24,14 @@ const CONTROL_POINTS_VISIBLE_STORAGE_KEY = 'qixing-town:control-points-visible'
 const CONTROL_TARGET_STORAGE_KEY = 'qixing-town:control-target'
 const DEFAULT_ACTION_SEQUENCE_STEP_DURATION = 0.9
 const COMPOSED_ACTION_ID = 'action-sequences:composed'
-const BUILTIN_ACTIONS = BUILTIN_ASSETS.actions
-const BUILTIN_SEQUENCES = BUILTIN_ASSETS.sequences
+const BUILTIN_ACTIONS = [
+  ...BUILTIN_RUN_ASSETS.actions,
+  ...BUILTIN_JUMP_ASSETS.actions,
+]
+const BUILTIN_SEQUENCES = [
+  ...BUILTIN_RUN_ASSETS.sequences,
+  ...BUILTIN_JUMP_ASSETS.sequences,
+]
 
 const applyButtonStyle = (button, variant = 'normal') => {
   Object.assign(button.style, {
@@ -735,6 +742,13 @@ export const createSceneApp = (app) => {
     if (event.code === 'KeyG') {
       event.preventDefault()
       actionWheel.open()
+    }
+    if (event.code === 'Space' && playerController.controls.isLocked) {
+      const sequence = BUILTIN_SEQUENCES.find((s) => s.label === '跳')
+      if (!sequence) return
+
+      event.preventDefault()
+      startActionSequence(sequence)
     }
     if (event.code === 'Escape') {
       actionWheel.close()

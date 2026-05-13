@@ -1,0 +1,167 @@
+{
+  "type": "qixing-town:action-sequence-export",
+  "version": 1,
+  "rootSequenceId": "action-sequence-mp3nh7qi-mpqvv",
+  "sequences": [
+    {
+      "id": "action-sequence-mp3nh7qi-mpqvv",
+      "label": "跳",
+      "loop": false,
+      "steps": [
+        {
+          "id": "action-sequence-mp3nnb2e-8gq1l",
+          "type": "action",
+          "targetId": "action-mp3njvov-1pi2c",
+          "repeat": 1,
+          "duration": 0.2
+        },
+        {
+          "id": "action-sequence-mp3nh7qi-h9xe8",
+          "type": "action",
+          "targetId": "action-mp3nby21-f6rp9",
+          "repeat": 1,
+          "duration": 0.4
+        }
+      ],
+      "tracks": [
+        {
+          "id": "action-sequence-mp3nh7qi-3m1vl",
+          "label": "主轨道",
+          "loop": false,
+          "steps": [
+            {
+              "id": "action-sequence-mp3nnb2e-8gq1l",
+              "type": "action",
+              "targetId": "action-mp3njvov-1pi2c",
+              "repeat": 1,
+              "duration": 0.2
+            },
+            {
+              "id": "action-sequence-mp3nh7qi-h9xe8",
+              "type": "action",
+              "targetId": "action-mp3nby21-f6rp9",
+              "repeat": 1,
+              "duration": 0.4
+            }
+          ]
+        },
+        {
+          "id": "action-sequence-mp3ni1re-6mn4a",
+          "label": "轨道 2",
+          "loop": false,
+          "steps": [
+            {
+              "id": "action-sequence-mp3nq786-n5vhv",
+              "type": "position",
+              "targetId": "y",
+              "axis": "y",
+              "amount": -0.2,
+              "repeat": 1,
+              "duration": 0.1
+            },
+            {
+              "id": "action-sequence-mp3nrars-fstek",
+              "type": "position",
+              "targetId": "y",
+              "axis": "y",
+              "amount": 0.2,
+              "repeat": 1,
+              "duration": 0.1
+            },
+            {
+              "id": "action-sequence-mp3ni4ox-lqvzw",
+              "type": "position",
+              "targetId": "y",
+              "axis": "y",
+              "amount": 1,
+              "repeat": 1,
+              "duration": 0.2
+            },
+            {
+              "id": "action-sequence-mp3ni5g1-futzn",
+              "type": "position",
+              "targetId": "y",
+              "axis": "y",
+              "amount": -1,
+              "repeat": 1,
+              "duration": 0.2
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "actions": [
+    {
+      "id": "action-mp3nby21-f6rp9",
+      "label": "跳",
+      "controls": [
+        {
+          "id": "action-mp3nby21-57mnz",
+          "bone": "hipLeft",
+          "direction": "forward",
+          "angle": 89
+        },
+        {
+          "id": "action-mp3nby21-1smr4",
+          "bone": "hipRight",
+          "direction": "backward",
+          "angle": 56
+        },
+        {
+          "id": "action-mp3nby21-te5be",
+          "bone": "hip",
+          "direction": "forward",
+          "angle": -30
+        },
+        {
+          "id": "action-mp3nby21-i8td2",
+          "bone": "shoulderRight",
+          "direction": "forward",
+          "angle": 132
+        },
+        {
+          "id": "action-mp3nby21-ihbh6",
+          "bone": "shoulderLeft",
+          "direction": "backward",
+          "angle": 90
+        }
+      ],
+      "type": "fk",
+      "ikTargets": [],
+      "sourceId": null,
+      "isMirrored": false
+    },
+    {
+      "id": "action-mp3njvov-1pi2c",
+      "label": "蹲",
+      "controls": [
+        {
+          "id": "action-mp3nk1b6-a07vt",
+          "bone": "bothLegs",
+          "direction": "forward",
+          "angle": 134
+        },
+        {
+          "id": "action-mp3nl9sg-3lj67",
+          "bone": "bothFeet",
+          "direction": "forward",
+          "angle": -132
+        },
+        {
+          "id": "action-mp3nm2p7-5zmwh",
+          "bone": "bothArms",
+          "direction": "forward",
+          "angle": -31
+        },
+        {
+          "id": "action-mp3nme6u-f11c3",
+          "bone": "hip",
+          "direction": "forward",
+          "angle": -44
+        }
+      ],
+      "type": "fk"
+    }
+  ]
+}
