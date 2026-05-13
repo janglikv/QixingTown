@@ -341,8 +341,6 @@ export const createActionSettingsPanel = ({ app }) => {
   Object.assign(controlList.style, {
     display: 'grid',
     gap: '8px',
-    maxHeight: '220px',
-    overflowY: 'auto',
   })
 
   controlHeader.replaceChildren(...['关节', '方向', '角度', '排序', ''].map((label) => {

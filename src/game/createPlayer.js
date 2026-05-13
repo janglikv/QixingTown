@@ -21,8 +21,8 @@ export const PLAYER_PROPORTIONS = {
   shoulderWidth: 0.14,   // 肩宽（单侧）
 
   // 腿部
-  upperLegLength: 0.35,  // 大腿长度
-  lowerLegLength: 0.52,  // 小腿长度
+  upperLegLength: 0.45,  // 大腿长度
+  lowerLegLength: 0.45,  // 小腿长度
 
   // 手臂
   upperArmLength: 0.35,  // 大臂长度
@@ -40,7 +40,6 @@ export const STICK_FIGURE_HEIGHT = (
 )
 
 const HEAD_EYES_TEXTURE_SIZE = 512
-const HEAD_EYES_FONT_SIZE = 180
 const HEAD_EYES_YAW = Math.PI / 2
 
 const createHeadEyesTexture = () => {
@@ -54,12 +53,33 @@ const createHeadEyesTexture = () => {
 
   context.fillStyle = '#000000'
   context.fillRect(0, 0, HEAD_EYES_TEXTURE_SIZE, HEAD_EYES_TEXTURE_SIZE)
-  context.textAlign = 'center'
-  context.textBaseline = 'middle'
-  context.font = `${HEAD_EYES_FONT_SIZE}px "Apple Color Emoji", "Segoe UI Emoji", sans-serif`
-  context.fillText('👀', HEAD_EYES_TEXTURE_SIZE / 2, HEAD_EYES_TEXTURE_SIZE / 2)
+
+  const eyes = [
+    { x: 205, y: 245, pupilX: 205, pupilY: 245 },
+    { x: 307, y: 245, pupilX: 307, pupilY: 245 },
+  ]
+
+  eyes.forEach(({ x, y, pupilX, pupilY }) => {
+    context.beginPath()
+    context.arc(x, y, 46, 0, Math.PI * 2)
+    context.fillStyle = '#e8e8dc'
+    context.fill()
+
+    // 眼白边缘压暗一点，避免纯色圆贴到球面上显得太平。
+    context.lineWidth = 8
+    context.strokeStyle = 'rgba(0, 0, 0, 0.38)'
+    context.stroke()
+
+    context.beginPath()
+    context.arc(pupilX, pupilY, 18, 0, Math.PI * 2)
+    context.fillStyle = '#070707'
+    context.fill()
+  })
 
   const texture = new CanvasTexture(canvas)
+  // 通过 UV 变换补偿球面贴图的视觉压缩，保持 canvas 里的眼睛仍按正圆绘制。
+  texture.repeat.set(1, 0.72)
+  texture.offset.set(0, 0.14)
   texture.needsUpdate = true
   return texture
 }
