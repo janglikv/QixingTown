@@ -48,21 +48,12 @@ export const createEnvironment = (scene) => {
   const polaris = createPolaris()
   const player = createPlayer({
     name: 'player',
-    position: [0, STICK_FIGURE_HEIGHT / 2, -4],
+    position: [0, STICK_FIGURE_HEIGHT / 2, 0],
   })
   const trees = []
-  const treeRowCount = 5
-  const treeSpacingZ = 12
-  const treeRowX = 6
-  for (let i = 0; i < treeRowCount; i++) {
-    const z = (i - (treeRowCount - 1) / 2) * treeSpacingZ
-    const leftTree = createTree()
-    leftTree.position.set(-treeRowX, 0, z)
-    trees.push(leftTree)
-    const rightTree = createTree()
-    rightTree.position.set(treeRowX, 0, z)
-    trees.push(rightTree)
-  }
+  const tree = createTree()
+  tree.position.z = -6
+  trees.push(tree)
 
   const playerState = {
     userActionId: null,

@@ -145,7 +145,8 @@ export const createActionWheel = ({ scene, camera, domElement, actions, onOpenCh
 
   const getSegmentGapAngle = () => {
     const viewportHeight = domElement.clientHeight || window.innerHeight
-    const worldHeight = 2 * Math.tan((camera.fov * Math.PI) / 360) * UI_DISTANCE
+    const worldHeight = camera.userData.orthographicProjectionHeight
+      ?? 2 * Math.tan((camera.fov * Math.PI) / 360) * UI_DISTANCE
     const gapWorld = (worldHeight / viewportHeight) * SEGMENT_GAP_PIXELS
     const centerRadius = (WHEEL_INNER_RADIUS + WHEEL_OUTER_RADIUS) / 2
 
@@ -224,6 +225,11 @@ export const createActionWheel = ({ scene, camera, domElement, actions, onOpenCh
     group.position.copy(camera.position)
     group.quaternion.copy(camera.quaternion)
     group.translateZ(-UI_DISTANCE)
+    const perspectiveHeight = 2 * Math.tan((camera.fov * Math.PI) / 360) * UI_DISTANCE
+    const scale = camera.userData.orthographicProjectionHeight
+      ? camera.userData.orthographicProjectionHeight / perspectiveHeight
+      : 1
+    group.scale.setScalar(scale)
     syncSegmentGaps()
   }
 

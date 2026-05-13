@@ -1,4 +1,4 @@
-import { Vector2, Vector3 } from 'three'
+import { Vector2 } from 'three'
 import { PointerLockControls } from 'three/examples/jsm/controls/PointerLockControls.js'
 import {
   CAMERA_HEIGHT,
@@ -10,6 +10,8 @@ const CONTROL_TARGETS = {
   camera: 'camera',
   player: 'player',
 }
+const STANDING_CAMERA_YAW_OFFSET = Math.PI / 12
+const PLAYER_CAMERA_Z = 6
 
 export const createPlayerController = ({
   camera,
@@ -37,10 +39,87 @@ export const createPlayerController = ({
   const currentMoveDir = new Vector2()
   const SMOOTHING = 12 // 移动平滑系数
   const ROTATION_SMOOTHING = 15 // 转向平滑系数
+  const ROTATION_EPSILON = 0.001
+  let targetPlayerRotation = null
+  const playerCameraQuaternion = camera.quaternion.clone()
+  const stationaryCameraQuaternion = playerCameraQuaternion.clone()
+  const cameraControlPosition = camera.position.clone()
+  const cameraControlQuaternion = camera.quaternion.clone()
+  let isPlayerCameraLocked = false
 
   let controlTarget = Object.values(CONTROL_TARGETS).includes(initialControlTarget)
     ? initialControlTarget
     : CONTROL_TARGETS.player
+
+  const getMovementAxes = () => {
+    let xDir = 0
+    let zDir = 0
+
+    if (movement.left && movement.right) {
+      xDir = lastHorizontal === 'KeyD' ? 1 : -1
+    } else {
+      xDir = Number(movement.right) - Number(movement.left)
+    }
+
+    if (controlTarget === CONTROL_TARGETS.camera) {
+      if (movement.forward && movement.backward) {
+        zDir = lastVertical === 'KeyS' ? 1 : -1
+      } else {
+        zDir = Number(movement.backward) - Number(movement.forward)
+      }
+    }
+
+    return { xDir, zDir }
+  }
+
+  const hasPlayerHorizontalMovement = () => movement.left || movement.right
+
+  const lockPlayerCamera = () => {
+    stationaryCameraQuaternion.copy(playerCameraQuaternion)
+    camera.quaternion.copy(stationaryCameraQuaternion)
+    isPlayerCameraLocked = true
+  }
+
+  const unlockPlayerCamera = () => {
+    isPlayerCameraLocked = false
+  }
+
+  const applyPlayerCameraPose = () => {
+    if (player) camera.position.x = player.position.x
+    camera.position.y = CAMERA_HEIGHT
+    camera.position.z = PLAYER_CAMERA_Z
+    lockPlayerCamera()
+  }
+
+  const enterPlayerControl = () => {
+    cameraControlPosition.copy(camera.position)
+    cameraControlQuaternion.copy(camera.quaternion)
+    applyPlayerCameraPose()
+  }
+
+  const enterCameraControl = () => {
+    unlockPlayerCamera()
+    camera.position.copy(cameraControlPosition)
+    camera.quaternion.copy(cameraControlQuaternion)
+  }
+
+  if (controlTarget === CONTROL_TARGETS.player) {
+    applyPlayerCameraPose()
+  }
+
+  const getPlayerStandingRotation = (key) => (
+    key === 'KeyA'
+      ? Math.PI / 2 + STANDING_CAMERA_YAW_OFFSET
+      : -Math.PI / 2 - STANDING_CAMERA_YAW_OFFSET
+  )
+
+  const updateTargetPlayerRotation = ({ xDir, zDir }) => {
+    if (controlTarget !== CONTROL_TARGETS.player || !player) return
+    moveIntent.set(xDir, -zDir)
+    if (moveIntent.lengthSq() === 0) return
+    moveIntent.normalize()
+    targetPlayerRotation = Math.atan2(moveIntent.x, -moveIntent.y) + Math.PI
+  }
 
   const resetMovement = () => {
     movement.forward = false
@@ -49,6 +128,7 @@ export const createPlayerController = ({
     movement.right = false
     lastVertical = ''
     lastHorizontal = ''
+    targetPlayerRotation = null
   }
 
   const isCameraMoveKey = (code) => (
@@ -87,7 +167,9 @@ export const createPlayerController = ({
     }
 
     if (controlTarget === CONTROL_TARGETS.player) {
-      if (movement.forward || movement.backward || movement.left || movement.right) {
+      // 按键触发时立即锁定目标朝向，短按松开后也继续转到位。
+      updateTargetPlayerRotation(getMovementAxes())
+      if (hasPlayerHorizontalMovement()) {
         setPlayerRunSequenceActive?.(true)
       }
     }
@@ -95,6 +177,9 @@ export const createPlayerController = ({
 
   const handleKeyUp = (event) => {
     if (isCameraMoveKey(event.code)) event.preventDefault()
+    const releasedHorizontal = event.code === 'KeyA' || event.code === 'KeyD'
+      ? event.code
+      : ''
 
     if (event.code === 'AltLeft' || event.code === 'AltRight') {
       resetMovement()
@@ -121,8 +206,15 @@ export const createPlayerController = ({
     }
 
     if (controlTarget === CONTROL_TARGETS.player) {
-      if (!movement.forward && !movement.backward && !movement.left && !movement.right) {
+      if (!hasPlayerHorizontalMovement()) {
+        if (releasedHorizontal) {
+          // 停下后恢复站立偏转，避免角色停在纯侧面。
+          targetPlayerRotation = getPlayerStandingRotation(releasedHorizontal)
+        }
+        lockPlayerCamera()
         setPlayerRunSequenceActive?.(false)
+      } else {
+        updateTargetPlayerRotation(getMovementAxes())
       }
     }
   }
@@ -143,20 +235,7 @@ export const createPlayerController = ({
 
   const update = (delta) => {
     if (controls.isLocked) {
-      let xDir = 0
-      let zDir = 0
-
-      if (movement.left && movement.right) {
-        xDir = lastHorizontal === 'KeyD' ? 1 : -1
-      } else {
-        xDir = Number(movement.right) - Number(movement.left)
-      }
-
-      if (movement.forward && movement.backward) {
-        zDir = lastVertical === 'KeyS' ? 1 : -1
-      } else {
-        zDir = Number(movement.backward) - Number(movement.forward)
-      }
+      const { xDir, zDir } = getMovementAxes()
 
       // 归一化输入向量，确保斜向移动速度一致
       moveIntent.set(xDir, -zDir)
@@ -164,9 +243,27 @@ export const createPlayerController = ({
         moveIntent.normalize()
       }
 
+      if (moveIntent.lengthSq() > 0) {
+        updateTargetPlayerRotation({ xDir, zDir })
+      }
+
       // 移动向量插值
       const lerpFactor = 1 - Math.exp(-SMOOTHING * delta)
       currentMoveDir.lerp(moveIntent, lerpFactor)
+
+      if (controlTarget === CONTROL_TARGETS.player && player && targetPlayerRotation !== null) {
+        let diff = targetPlayerRotation - player.rotation.y
+        while (diff < -Math.PI) diff += Math.PI * 2
+        while (diff > Math.PI) diff -= Math.PI * 2
+
+        if (Math.abs(diff) <= ROTATION_EPSILON) {
+          player.rotation.y = targetPlayerRotation
+          targetPlayerRotation = null
+        } else {
+          const rotationLerpFactor = 1 - Math.exp(-ROTATION_SMOOTHING * delta)
+          player.rotation.y += diff * rotationLerpFactor
+        }
+      }
 
       if (currentMoveDir.lengthSq() > 0.0001) {
         if (controlTarget === CONTROL_TARGETS.camera) {
@@ -174,30 +271,16 @@ export const createPlayerController = ({
           controls.moveRight(currentMoveDir.x * MOVE_SPEED * delta)
           controls.moveForward(currentMoveDir.y * MOVE_SPEED * delta)
         } else if (player) {
-          // 转向平滑：使用单独的旋转逻辑
-          if (moveIntent.lengthSq() > 0) {
-            const targetRotation = Math.atan2(moveIntent.x, -moveIntent.y) + Math.PI
-            
-            // 处理旋转角度绕回 (360度)，确保总是选择最短路径转向
-            let diff = targetRotation - player.rotation.y
-            while (diff < -Math.PI) diff += Math.PI * 2
-            while (diff > Math.PI) diff -= Math.PI * 2
-            
-            const rotationLerpFactor = 1 - Math.exp(-ROTATION_SMOOTHING * delta)
-            player.rotation.y += diff * rotationLerpFactor
-          }
-
-          // 始终沿着玩家当前的正面方向移动
-          const moveVector = new Vector3()
-          moveVector.set(0, 0, -1).applyQuaternion(player.quaternion)
-          
-          // 这里的速度受平滑移动向量长度影响，产生平滑的加减速感
-          const speedMultiplier = currentMoveDir.length()
-          moveVector.multiplyScalar(MOVE_SPEED * delta * speedMultiplier)
-
-          player.position.add(moveVector)
-          camera.position.add(moveVector)
+          // 玩家模式锁定 z，A/D 只在世界 x 轴上移动。
+          const moveX = currentMoveDir.x * MOVE_SPEED * delta
+          player.position.x += moveX
+          camera.position.x += moveX
         }
+      }
+
+      if (controlTarget === CONTROL_TARGETS.player && isPlayerCameraLocked) {
+        camera.quaternion.copy(stationaryCameraQuaternion)
+        camera.position.z = PLAYER_CAMERA_Z
       }
     }
 
@@ -224,6 +307,11 @@ export const createPlayerController = ({
         ? CONTROL_TARGETS.player
         : CONTROL_TARGETS.camera
       resetMovement()
+      if (controlTarget === CONTROL_TARGETS.player) {
+        enterPlayerControl()
+      } else {
+        enterCameraControl()
+      }
       return controlTarget
     },
     update,

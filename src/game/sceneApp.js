@@ -24,6 +24,8 @@ const CONTROL_POINTS_VISIBLE_STORAGE_KEY = 'qixing-town:control-points-visible'
 const CONTROL_TARGET_STORAGE_KEY = 'qixing-town:control-target'
 const DEFAULT_ACTION_SEQUENCE_STEP_DURATION = 0.9
 const COMPOSED_ACTION_ID = 'action-sequences:composed'
+const PERSPECTIVE_CAMERA_FOV = 75
+const PLAYER_ORTHO_REFERENCE_DISTANCE = 6
 const BUILTIN_ACTIONS = [
   ...BUILTIN_RUN_ASSETS.actions,
   ...BUILTIN_JUMP_ASSETS.actions,
@@ -50,9 +52,9 @@ const readControlPointsVisible = () => {
   try {
     const value = window.localStorage.getItem(CONTROL_POINTS_VISIBLE_STORAGE_KEY)
 
-    return value === null ? true : value === 'true'
+    return value === null ? false : value === 'true'
   } catch {
-    return true
+    return false
   }
 }
 
@@ -249,10 +251,73 @@ const createCoordinatesIndicator = ({ app }) => {
   }
 }
 
+const createFpsIndicator = ({ app }) => {
+  const element = document.createElement('div')
+  let frameCount = 0
+  let elapsed = 0
+  Object.assign(element.style, {
+    position: 'absolute',
+    left: '14px',
+    top: '14px',
+    zIndex: '10',
+    color: '#39ff14',
+    fontSize: '12px',
+    fontFamily: 'monospace',
+    userSelect: 'none',
+    pointerEvents: 'none',
+  })
+
+  app.append(element)
+
+  return {
+    update: (delta) => {
+      frameCount += 1
+      elapsed += delta
+      if (elapsed < 0.5) return
+
+      element.textContent = `FPS: ${Math.round(frameCount / elapsed)}`
+      frameCount = 0
+      elapsed = 0
+    },
+    dispose: () => {
+      element.remove()
+    },
+  }
+}
+
 const createCamera = () => {
-  const camera = new PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 500)
+  const camera = new PerspectiveCamera(PERSPECTIVE_CAMERA_FOV, window.innerWidth / window.innerHeight, 0.1, 500)
   camera.position.set(0, CAMERA_HEIGHT, 6)
   return camera
+}
+
+const getPerspectiveViewHeight = (camera, distance) => (
+  2 * Math.tan((camera.fov * Math.PI) / 360) * distance
+)
+
+const updateCameraProjection = (camera, controlTarget) => {
+  camera.aspect = window.innerWidth / window.innerHeight
+
+  if (controlTarget !== 'player') {
+    camera.updateProjectionMatrix()
+    camera.userData.orthographicProjectionHeight = null
+    return
+  }
+
+  const viewHeight = getPerspectiveViewHeight(camera, PLAYER_ORTHO_REFERENCE_DISTANCE)
+  const viewWidth = viewHeight * camera.aspect
+
+  // Player 模式用正交投影，避免场景随深度出现近大远小。
+  camera.projectionMatrix.makeOrthographic(
+    -viewWidth / 2,
+    viewWidth / 2,
+    viewHeight / 2,
+    -viewHeight / 2,
+    camera.near,
+    camera.far,
+  )
+  camera.projectionMatrixInverse.copy(camera.projectionMatrix).invert()
+  camera.userData.orthographicProjectionHeight = viewHeight
 }
 
 export const createSceneApp = (app) => {
@@ -296,7 +361,9 @@ export const createSceneApp = (app) => {
     app,
     initialTarget: playerController.getControlTarget(),
   })
+  updateCameraProjection(camera, playerController.getControlTarget())
   const coordinatesIndicator = createCoordinatesIndicator({ app })
+  const fpsIndicator = createFpsIndicator({ app })
   const resetButton = createResetButton({
     app,
     label: '全部重置',
@@ -509,6 +576,7 @@ export const createSceneApp = (app) => {
 
   const applySequencePositionDelta = (track, { axis, amount }) => {
     if (!['x', 'y', 'z'].includes(axis) || amount === 0) return
+    if (axis === 'z') return
 
     track.positionOffset[axis] += amount
   }
@@ -516,10 +584,11 @@ export const createSceneApp = (app) => {
   const createTrackPositionOffset = (track) => {
     const offset = new Vector3()
 
-    if (track.positionOffset.x !== 0 || track.positionOffset.z !== 0) {
-      const localOffset = new Vector3(track.positionOffset.x, 0, track.positionOffset.z)
+    if (track.positionOffset.x !== 0) {
+      const localOffset = new Vector3(track.positionOffset.x, 0, 0)
 
       localOffset.applyQuaternion(environment.player.quaternion)
+      localOffset.z = 0
       offset.add(localOffset)
     }
     offset.y = track.positionOffset.y
@@ -723,8 +792,7 @@ export const createSceneApp = (app) => {
   timer.connect(document)
 
   const onResize = () => {
-    camera.aspect = window.innerWidth / window.innerHeight
-    camera.updateProjectionMatrix()
+    updateCameraProjection(camera, playerController.getControlTarget())
     renderer.setSize(window.innerWidth, window.innerHeight)
   }
 
@@ -735,6 +803,7 @@ export const createSceneApp = (app) => {
       event.preventDefault()
       const target = playerController.toggleControlTarget()
 
+      updateCameraProjection(camera, target)
       writeControlTarget(target)
       controlTargetIndicator.setTarget(target)
     }
@@ -841,6 +910,7 @@ export const createSceneApp = (app) => {
     controlTargetIndicator.syncCursorVisible(cursorVisible)
     coordinatesIndicator.syncCursorVisible(cursorVisible)
     coordinatesIndicator.update(camera.position, environment.player.position)
+    fpsIndicator.update(delta)
     resetButton.syncCursorVisible(cursorVisible)
     actionSettingsPanel.syncCursorVisible(cursorVisible)
     actionSequencePanel.syncCursorVisible(cursorVisible)
@@ -867,6 +937,7 @@ export const createSceneApp = (app) => {
     controlPointToggle.dispose()
     controlTargetIndicator.dispose()
     coordinatesIndicator.dispose()
+    fpsIndicator.dispose()
     resetButton.dispose()
     actionSettingsPanel.dispose()
     actionSequencePanel.dispose()

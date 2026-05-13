@@ -41,6 +41,7 @@ export const STICK_FIGURE_HEIGHT = (
 
 const HEAD_EYES_TEXTURE_SIZE = 512
 const HEAD_EYES_YAW = Math.PI / 2
+const STANDING_CAMERA_YAW_OFFSET = Math.PI / 12
 
 const createHeadEyesTexture = () => {
   const canvas = document.createElement('canvas')
@@ -237,7 +238,7 @@ export const createPlayerJointPositions = () => createRigJointPositions(PLAYER_M
 
 export const createPlayer = ({
   name = 'player',
-  position = [0, STICK_FIGURE_HEIGHT / 2, -4],
+  position = [0, STICK_FIGURE_HEIGHT / 2, 0],
 } = {}) => {
   const joints = createPlayerJointPositions()
   const { figure } = createRigFigure({
@@ -247,6 +248,8 @@ export const createPlayer = ({
     rig: PLAYER_MODEL_RIG,
     actions: true,
   })
+  // 默认面向 D 方向并朝镜头侧偏 15 度，避免站立时变成纯侧面。
+  figure.rotation.y = -Math.PI / 2 - STANDING_CAMERA_YAW_OFFSET
 
   return figure
 }
