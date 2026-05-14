@@ -8,10 +8,11 @@ export default defineConfig({
     port: 9999,
   },
   build: {
-    chunkSizeWarningLimit: 800,
-    rolldownOptions: {
+    chunkSizeWarningLimit: 2500,
+    rollupOptions: {
       output: {
         manualChunks(id) {
+          if (id.includes('/node_modules/@dimforge/rapier3d-compat/')) return 'physics'
           if (!id.includes('/node_modules/three/')) return
 
           if (id.includes('/node_modules/three/examples/')) return 'three-examples'

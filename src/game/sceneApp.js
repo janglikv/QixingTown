@@ -15,7 +15,7 @@ import {
   Vector3,
   WebGLRenderer,
 } from 'three'
-import { WORLD_TUNING } from '../config.js'
+import { MOVE_SPEED, WORLD_TUNING } from '../config.js'
 import { createActionSequencePanel, normalizeActionSequence, readUserActionSequences } from './actionSequencePanel.js'
 import { createActionSettingsPanel, readUserActions } from './actionSettingsPanel.js'
 import { createActionWheel } from './actionWheel.js'
@@ -72,9 +72,9 @@ const readControlPointsVisible = () => {
   try {
     const value = window.localStorage.getItem(CONTROL_POINTS_VISIBLE_STORAGE_KEY)
 
-    return value === null ? true : value === 'true'
+    return value === null ? false : value === 'true'
   } catch {
-    return true
+    return false
   }
 }
 
@@ -808,6 +808,18 @@ const createMapEditAimPoint = ({ scene, targets, initialMapData, initialWallTarg
       updateConnection(path)
 
       return point
+    },
+    moveActivePath: (offset) => {
+      const path = activePath ?? hoveredPath
+      if (!path) return
+
+      path.points.forEach((point, index) => {
+        point.add(offset)
+        if (path.marks[index]) {
+          path.marks[index].position.copy(point)
+        }
+      })
+      updateConnection(path)
     },
     createMapData: () => {
       const savablePaths = getSavablePaths()
@@ -1720,6 +1732,23 @@ export const createSceneApp = async (app) => {
     if (mapEditActive) {
       mapEditAimPoint.update(camera)
       mapEditTargetHint.setVisible(mapEditAimPoint.isHoveringEditableTarget())
+
+      if (playerController.isAltPressed()) {
+        const moveDir = playerController.getCurrentMoveDir()
+        if (moveDir.lengthSq() > 0.0001) {
+          const moveVector = new Vector3()
+          const cameraRight = new Vector3()
+          const cameraForward = new Vector3()
+
+          cameraRight.setFromMatrixColumn(camera.matrix, 0)
+          cameraForward.crossVectors(camera.up, cameraRight)
+
+          moveVector.addScaledVector(cameraRight, moveDir.x * MOVE_SPEED * delta)
+          moveVector.addScaledVector(cameraForward, moveDir.y * MOVE_SPEED * delta)
+
+          mapEditAimPoint.moveActivePath(moveVector)
+        }
+      }
     }
     updateActionSequence(delta)
     environment.update(delta)

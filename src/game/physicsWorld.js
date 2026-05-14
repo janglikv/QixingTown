@@ -1,4 +1,3 @@
-import RAPIER from '@dimforge/rapier3d-compat'
 import { Vector3 } from 'three'
 import { STICK_FIGURE_HEIGHT } from './createPlayer.js'
 
@@ -36,17 +35,18 @@ const getMeshTrimeshData = (mesh) => {
   return { vertices, indices }
 }
 
-const addMeshCollider = (world, mesh) => {
+const addMeshCollider = (RAPIER, world, mesh) => {
   const { vertices, indices } = getMeshTrimeshData(mesh)
   world.createCollider(RAPIER.ColliderDesc.trimesh(vertices, indices))
 }
 
 export const createPhysicsWorld = async ({ wallMeshes, playerPosition }) => {
+  const RAPIER = await import('@dimforge/rapier3d-compat')
   await RAPIER.init()
 
   const world = new RAPIER.World({ x: 0, y: 0, z: 0 })
   wallMeshes.forEach((mesh) => {
-    addMeshCollider(world, mesh)
+    addMeshCollider(RAPIER, world, mesh)
   })
 
   const playerBody = world.createRigidBody(

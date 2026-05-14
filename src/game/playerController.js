@@ -31,6 +31,7 @@ export const createPlayerController = ({
     right: false,
     up: false,
     down: false,
+    alt: false,
   }
   let lastVertical = '' // 'KeyW' or 'KeyS'
   let lastHorizontal = '' // 'KeyA' or 'KeyD'
@@ -59,6 +60,7 @@ export const createPlayerController = ({
     movement.right = false
     movement.up = false
     movement.down = false
+    movement.alt = false
     lastVertical = ''
     lastHorizontal = ''
     lastAltitude = ''
@@ -87,6 +89,10 @@ export const createPlayerController = ({
     if (event.repeat) return
     if (isCameraMoveKey(event.code) || (controlTarget === CONTROL_TARGETS.camera && isCameraAltitudeKey(event.code))) {
       event.preventDefault()
+    }
+
+    if (event.altKey) {
+      movement.alt = true
     }
 
     switch (event.code) {
@@ -119,10 +125,14 @@ export const createPlayerController = ({
           lastAltitude = 'Shift'
         }
         break
+      case 'AltLeft':
+      case 'AltRight':
+        movement.alt = true
+        break
     }
 
     if (controlTarget === CONTROL_TARGETS.player) {
-      if (movement.forward || movement.backward || movement.left || movement.right) {
+      if (!movement.alt && (movement.forward || movement.backward || movement.left || movement.right)) {
         setPlayerRunSequenceActive?.(true)
       }
     }
@@ -134,7 +144,7 @@ export const createPlayerController = ({
     }
 
     if (event.code === 'AltLeft' || event.code === 'AltRight') {
-      resetMovement()
+      movement.alt = false
       return
     }
 
@@ -175,6 +185,7 @@ export const createPlayerController = ({
 
   const handleUnlock = () => {
     resetMovement()
+    setPlayerRunSequenceActive?.(false)
   }
 
   const handleBlur = () => {
@@ -225,38 +236,42 @@ export const createPlayerController = ({
 
       if (currentMoveDir.lengthSq() > 0.0001) {
         if (controlTarget === CONTROL_TARGETS.camera) {
-          // 相机模式平滑移动
-          controls.moveRight(currentMoveDir.x * MOVE_SPEED * delta)
-          controls.moveForward(currentMoveDir.y * MOVE_SPEED * delta)
-        } else if (player) {
-          // 转向平滑：使用单独的旋转逻辑
-          if (moveIntent.lengthSq() > 0) {
-            const targetRotation = Math.atan2(moveIntent.x, -moveIntent.y) + Math.PI
-            
-            // 处理旋转角度绕回 (360度)，确保总是选择最短路径转向
-            let diff = targetRotation - player.rotation.y
-            while (diff < -Math.PI) diff += Math.PI * 2
-            while (diff > Math.PI) diff -= Math.PI * 2
-            
-            const rotationLerpFactor = 1 - Math.exp(-ROTATION_SMOOTHING * delta)
-            player.rotation.y += diff * rotationLerpFactor
+          if (!movement.alt) {
+            // 相机模式平滑移动
+            controls.moveRight(currentMoveDir.x * MOVE_SPEED * delta)
+            controls.moveForward(currentMoveDir.y * MOVE_SPEED * delta)
           }
+        } else if (player) {
+          if (!movement.alt) {
+            // 转向平滑：使用单独的旋转逻辑
+            if (moveIntent.lengthSq() > 0) {
+              const targetRotation = Math.atan2(moveIntent.x, -moveIntent.y) + Math.PI
+              
+              // 处理旋转角度绕回 (360度)，确保总是选择最短路径转向
+              let diff = targetRotation - player.rotation.y
+              while (diff < -Math.PI) diff += Math.PI * 2
+              while (diff > Math.PI) diff -= Math.PI * 2
+              
+              const rotationLerpFactor = 1 - Math.exp(-ROTATION_SMOOTHING * delta)
+              player.rotation.y += diff * rotationLerpFactor
+            }
 
-          // 始终沿着玩家当前的正面方向移动
-          const moveVector = new Vector3()
-          moveVector.set(0, 0, -1).applyQuaternion(player.quaternion)
-          
-          // 这里的速度受平滑移动向量长度影响，产生平滑的加减速感
-          const speedMultiplier = currentMoveDir.length()
-          moveVector.multiplyScalar(MOVE_SPEED * delta * speedMultiplier)
+            // 始终沿着玩家当前的正面方向移动
+            const moveVector = new Vector3()
+            moveVector.set(0, 0, -1).applyQuaternion(player.quaternion)
+            
+            // 这里的速度受平滑移动向量长度影响，产生平滑的加减速感
+            const speedMultiplier = currentMoveDir.length()
+            moveVector.multiplyScalar(MOVE_SPEED * delta * speedMultiplier)
 
-          const allowedMove = physics?.movePlayer(player.position, moveVector) ?? moveVector
-          player.position.add(allowedMove)
-          camera.position.add(allowedMove)
+            const allowedMove = physics?.movePlayer(player.position, moveVector) ?? moveVector
+            player.position.add(allowedMove)
+            camera.position.add(allowedMove)
+          }
         }
       }
 
-      if (controlTarget === CONTROL_TARGETS.camera && Math.abs(currentAltitudeDir) > 0.0001) {
+      if (controlTarget === CONTROL_TARGETS.camera && !movement.alt && Math.abs(currentAltitudeDir) > 0.0001) {
         camera.position.y += currentAltitudeDir * MOVE_SPEED * delta
       }
     }
@@ -294,6 +309,8 @@ export const createPlayerController = ({
       syncPointerSpeed()
       return controlTarget
     },
+    isAltPressed: () => movement.alt,
+    getCurrentMoveDir: () => currentMoveDir,
     update,
     dispose,
   }
