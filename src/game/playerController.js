@@ -1,7 +1,6 @@
 import { Vector2, Vector3 } from 'three'
 import { PointerLockControls } from 'three/examples/jsm/controls/PointerLockControls.js'
 import {
-  CAMERA_HEIGHT,
   MOVE_SPEED,
   WORLD_TUNING,
 } from '../config.js'
@@ -15,6 +14,7 @@ export const createPlayerController = ({
   camera,
   player,
   domElement,
+  physics,
   setPlayerWalkIkActive,
   setPlayerRunSequenceActive,
   initialControlTarget = CONTROL_TARGETS.camera,
@@ -29,12 +29,16 @@ export const createPlayerController = ({
     backward: false,
     left: false,
     right: false,
+    up: false,
+    down: false,
   }
   let lastVertical = '' // 'KeyW' or 'KeyS'
   let lastHorizontal = '' // 'KeyA' or 'KeyD'
+  let lastAltitude = '' // 'Space' or 'Shift'
 
   const moveIntent = new Vector2()
   const currentMoveDir = new Vector2()
+  let currentAltitudeDir = 0
   const SMOOTHING = 12 // 移动平滑系数
   const ROTATION_SMOOTHING = 15 // 转向平滑系数
 
@@ -42,13 +46,23 @@ export const createPlayerController = ({
     ? initialControlTarget
     : CONTROL_TARGETS.player
 
+  const syncPointerSpeed = () => {
+    controls.pointerSpeed = controlTarget === CONTROL_TARGETS.camera
+      ? WORLD_TUNING.pointerSpeed
+      : 0
+  }
+
   const resetMovement = () => {
     movement.forward = false
     movement.backward = false
     movement.left = false
     movement.right = false
+    movement.up = false
+    movement.down = false
     lastVertical = ''
     lastHorizontal = ''
+    lastAltitude = ''
+    currentAltitudeDir = 0
   }
 
   const isCameraMoveKey = (code) => (
@@ -58,6 +72,12 @@ export const createPlayerController = ({
     || code === 'KeyD'
   )
 
+  const isCameraAltitudeKey = (code) => (
+    code === 'Space'
+    || code === 'ShiftLeft'
+    || code === 'ShiftRight'
+  )
+
   const lockOnClick = () => {
     if (!controls.isLocked) controls.lock()
   }
@@ -65,7 +85,9 @@ export const createPlayerController = ({
   const handleKeyDown = (event) => {
     if (!controls.isLocked) return
     if (event.repeat) return
-    if (isCameraMoveKey(event.code)) event.preventDefault()
+    if (isCameraMoveKey(event.code) || (controlTarget === CONTROL_TARGETS.camera && isCameraAltitudeKey(event.code))) {
+      event.preventDefault()
+    }
 
     switch (event.code) {
       case 'KeyW':
@@ -84,6 +106,19 @@ export const createPlayerController = ({
         movement.right = true
         lastHorizontal = 'KeyD'
         break
+      case 'Space':
+        if (controlTarget === CONTROL_TARGETS.camera) {
+          movement.up = true
+          lastAltitude = 'Space'
+        }
+        break
+      case 'ShiftLeft':
+      case 'ShiftRight':
+        if (controlTarget === CONTROL_TARGETS.camera) {
+          movement.down = true
+          lastAltitude = 'Shift'
+        }
+        break
     }
 
     if (controlTarget === CONTROL_TARGETS.player) {
@@ -94,7 +129,9 @@ export const createPlayerController = ({
   }
 
   const handleKeyUp = (event) => {
-    if (isCameraMoveKey(event.code)) event.preventDefault()
+    if (isCameraMoveKey(event.code) || (controlTarget === CONTROL_TARGETS.camera && isCameraAltitudeKey(event.code))) {
+      event.preventDefault()
+    }
 
     if (event.code === 'AltLeft' || event.code === 'AltRight') {
       resetMovement()
@@ -118,6 +155,15 @@ export const createPlayerController = ({
         movement.right = false
         if (lastHorizontal === 'KeyD') lastHorizontal = movement.left ? 'KeyA' : ''
         break
+      case 'Space':
+        movement.up = false
+        if (lastAltitude === 'Space') lastAltitude = movement.down ? 'Shift' : ''
+        break
+      case 'ShiftLeft':
+      case 'ShiftRight':
+        movement.down = false
+        if (lastAltitude === 'Shift') lastAltitude = movement.up ? 'Space' : ''
+        break
     }
 
     if (controlTarget === CONTROL_TARGETS.player) {
@@ -140,11 +186,13 @@ export const createPlayerController = ({
   window.addEventListener('blur', handleBlur)
   window.addEventListener('keydown', handleKeyDown)
   window.addEventListener('keyup', handleKeyUp)
+  syncPointerSpeed()
 
   const update = (delta) => {
     if (controls.isLocked) {
       let xDir = 0
       let zDir = 0
+      let yDir = 0
 
       if (movement.left && movement.right) {
         xDir = lastHorizontal === 'KeyD' ? 1 : -1
@@ -158,6 +206,12 @@ export const createPlayerController = ({
         zDir = Number(movement.backward) - Number(movement.forward)
       }
 
+      if (movement.up && movement.down) {
+        yDir = lastAltitude === 'Shift' ? -1 : 1
+      } else {
+        yDir = Number(movement.up) - Number(movement.down)
+      }
+
       // 归一化输入向量，确保斜向移动速度一致
       moveIntent.set(xDir, -zDir)
       if (moveIntent.lengthSq() > 0) {
@@ -167,6 +221,7 @@ export const createPlayerController = ({
       // 移动向量插值
       const lerpFactor = 1 - Math.exp(-SMOOTHING * delta)
       currentMoveDir.lerp(moveIntent, lerpFactor)
+      currentAltitudeDir += (yDir - currentAltitudeDir) * lerpFactor
 
       if (currentMoveDir.lengthSq() > 0.0001) {
         if (controlTarget === CONTROL_TARGETS.camera) {
@@ -195,13 +250,17 @@ export const createPlayerController = ({
           const speedMultiplier = currentMoveDir.length()
           moveVector.multiplyScalar(MOVE_SPEED * delta * speedMultiplier)
 
-          player.position.add(moveVector)
-          camera.position.add(moveVector)
+          const allowedMove = physics?.movePlayer(player.position, moveVector) ?? moveVector
+          player.position.add(allowedMove)
+          camera.position.add(allowedMove)
         }
+      }
+
+      if (controlTarget === CONTROL_TARGETS.camera && Math.abs(currentAltitudeDir) > 0.0001) {
+        camera.position.y += currentAltitudeDir * MOVE_SPEED * delta
       }
     }
 
-    camera.position.y = CAMERA_HEIGHT
     document.body.classList.toggle('cursor-visible', !controls.isLocked)
   }
 
@@ -219,11 +278,20 @@ export const createPlayerController = ({
   return {
     controls,
     getControlTarget: () => controlTarget,
+    setControlTarget: (target) => {
+      if (!Object.values(CONTROL_TARGETS).includes(target)) return controlTarget
+
+      controlTarget = target
+      resetMovement()
+      syncPointerSpeed()
+      return controlTarget
+    },
     toggleControlTarget: () => {
       controlTarget = controlTarget === CONTROL_TARGETS.camera
         ? CONTROL_TARGETS.player
         : CONTROL_TARGETS.camera
       resetMovement()
+      syncPointerSpeed()
       return controlTarget
     },
     update,
