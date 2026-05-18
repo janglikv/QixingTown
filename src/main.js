@@ -10,7 +10,7 @@ import './style.css';
 const app = new Application();
 
 await app.init({
-  background: '#222222',
+  background: '#8b5a2b',
   resizeTo: window,
   resolution: window.devicePixelRatio || 1,
   autoDensity: true,
